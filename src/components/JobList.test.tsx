@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { JobList } from './JobList';
 import type { Job } from '../api';
 
@@ -20,6 +21,8 @@ const running: Job = {
     updatedAt: 1730000000000,
   },
 };
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe('JobList', () => {
   it('shows the cluster MultiKueue picked and the queue phase', () => {
@@ -56,5 +59,21 @@ describe('JobList', () => {
     render(<JobList jobs={[]} />);
 
     expect(screen.getByText('제출된 작업이 없습니다')).toBeInTheDocument();
+  });
+
+  it('opens the submitted files of a job', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url.endsWith('/files')
+          ? new Response(JSON.stringify([{ kind: 'code', name: 'job.yaml', size: 12 }]))
+          : new Response('kind: JobSet', { headers: { 'X-Truncated': 'false', 'X-Total-Size': '12' } }),
+      ),
+    );
+    render(<JobList jobs={[running]} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'abc123 파일 보기' }));
+
+    expect(await screen.findByText('kind: JobSet')).toBeInTheDocument();
   });
 });

@@ -15,6 +15,12 @@
 | 클러스터 | MultiKueue가 고른 EKS(`devoops-a`/`devoops-b`). 아직 없으면 `미배정` |
 | 진행 | step / total_steps 진행 바 (train.py가 DynamoDB에 기록한 값) |
 | loss · 마지막 체크포인트 · 노드 | 같은 DynamoDB 항목 |
+| 파일 | `보기`를 누르면 그 작업에 올린 파일을 표 아래에 펼친다(아래 참고) |
+
+- **제출 파일 보기:** 작업마다 S3에 저장된 `job.yaml`(제출한 원본), `train.py`, 학습 데이터 목록을 버튼으로 보여 준다. 처음에는 첫 파일(job.yaml)을 열고, 버튼을 누르면 그 파일 내용을 보여 준다.
+  - 백엔드 `GET /api/jobs/{id}/files`, `GET /api/jobs/{id}/files/{kind}/{name}`을 쓴다.
+  - 데이터셋은 클 수 있어서 백엔드가 앞 64KiB만 준다. 잘렸으면 `앞부분만 표시 (64.0KB / 전체 N MB)`라고 표시한다.
+  - 이 기능 전에 제출한 작업은 job.yaml이 저장돼 있지 않다.
 
 진행 기록이 아직 없으면 `진행 기록 없음`을 표시한다. 백엔드에 연결할 수 없으면 목록 위에 그 사실을 표시한다.
 
@@ -25,6 +31,7 @@ src/api.ts                    백엔드 API 클라이언트·타입 (Backend int
 src/App.tsx                   폴링(2초)과 제출 후 즉시 갱신
 src/components/UploadForm.tsx 업로드 폼
 src/components/JobList.tsx    작업 표
+src/components/JobFiles.tsx   작업에 올린 파일 목록·내용
 ```
 
 백엔드 주소는 `VITE_API_BASE`이고 기본값은 `http://localhost:8080`이다. 빌드할 때 번들에 들어간다.
@@ -40,9 +47,10 @@ npm run typecheck
 npm run build
 ```
 
-- `api`: multipart 필드(`job`, `train`, `data` 여러 개)와 URL, 서버 오류 메시지 전달
+- `api`: multipart 필드(`job`, `train`, `data` 여러 개)와 URL, 서버 오류 메시지 전달, 파일 목록·내용 URL(파일명 인코딩), 잘림 헤더 해석
 - `UploadForm`: 세 입력이 다 있어야 제출 가능, 선택한 파일 전달, 오류 표시
-- `JobList`: 클러스터·상태·진행 바·loss·체크포인트·노드·재시작 수, 진행 기록 없음, 빈 목록
+- `JobList`: 클러스터·상태·진행 바·loss·체크포인트·노드·재시작 수, 진행 기록 없음, 빈 목록, `파일 보기`로 파일 펼치기
+- `JobFiles`: 파일 목록, 처음에 job.yaml 열기, 다른 파일 선택, 잘린 데이터 안내, 빈 상태
 - `App`: 2초 폴링으로 값이 갱신되는지, 백엔드 연결 실패 표시
 
 ## 로컬 Docker 실행

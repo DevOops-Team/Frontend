@@ -22,6 +22,20 @@ export interface Job {
   progress: Progress | null;
 }
 
+// 작업에 올린 파일. code = job.yaml·train.py, data = 학습 데이터.
+export interface JobFile {
+  kind: 'code' | 'data';
+  name: string;
+  size: number;
+}
+
+// 백엔드는 파일 앞 64KiB만 준다. 잘렸으면 truncated, 전체 크기는 totalSize.
+export interface FileContent {
+  text: string;
+  truncated: boolean;
+  totalSize: number;
+}
+
 export interface JobInput {
   job: File;
   train: File;
@@ -48,4 +62,22 @@ export async function createJob(input: JobInput): Promise<{ id: string; name: st
 
 export async function listJobs(): Promise<Job[]> {
   return parse(await fetch(`${API_BASE}/api/jobs`));
+}
+
+export async function listFiles(jobId: string): Promise<JobFile[]> {
+  return parse(await fetch(`${API_BASE}/api/jobs/${encodeURIComponent(jobId)}/files`));
+}
+
+export async function getFile(jobId: string, kind: JobFile['kind'], name: string): Promise<FileContent> {
+  const res = await fetch(
+    `${API_BASE}/api/jobs/${encodeURIComponent(jobId)}/files/${kind}/${encodeURIComponent(name)}`,
+  );
+  if (!res.ok) {
+    await parse(res);
+  }
+  return {
+    text: await res.text(),
+    truncated: res.headers.get('X-Truncated') === 'true',
+    totalSize: Number(res.headers.get('X-Total-Size') ?? 0),
+  };
 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createJob, listJobs } from './api';
+import { createJob, getFile, listFiles, listJobs } from './api';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -38,5 +38,37 @@ describe('listJobs', () => {
     const jobs = await listJobs();
 
     expect(jobs[0].id).toBe('abc123');
+  });
+});
+
+describe('listFiles', () => {
+  it('returns the stored code and data files of one job', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify([{ kind: 'code', name: 'job.yaml', size: 10 }])));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const files = await listFiles('abc123');
+
+    expect(fetchMock.mock.calls[0][0]).toBe('http://localhost:8080/api/jobs/abc123/files');
+    expect(files).toEqual([{ kind: 'code', name: 'job.yaml', size: 10 }]);
+  });
+});
+
+describe('getFile', () => {
+  it('returns file text with truncation info from response headers', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('1,2,3', { headers: { 'X-Truncated': 'true', 'X-Total-Size': '120000' } }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const file = await getFile('abc123', 'data', 'my data.csv');
+
+    expect(fetchMock.mock.calls[0][0]).toBe('http://localhost:8080/api/jobs/abc123/files/data/my%20data.csv');
+    expect(file).toEqual({ text: '1,2,3', truncated: true, totalSize: 120000 });
+  });
+
+  it('throws the server error message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'file not found' }), { status: 404 })));
+
+    await expect(getFile('abc123', 'code', 'gone.py')).rejects.toThrow('file not found');
   });
 });

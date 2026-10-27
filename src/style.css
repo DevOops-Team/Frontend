@@ -7,3 +7,6 @@ table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #8884; vertical-align: top; }
 .muted { opacity: 0.6; }
 [role='alert'], [role='status'] { color: #cf222e; }
+.file-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.file-tabs button[aria-pressed='true'] { font-weight: 600; }
+pre { max-height: 420px; overflow: auto; padding: 8px; background: #8881; border: 1px solid #8884; font-size: 12px; white-space: pre; }
