@@ -1,5 +1,5 @@
-:root { font-family: system-ui, sans-serif; color: #1f2328; background: #fff; }
-@media (prefers-color-scheme: dark) { :root { color: #e6edf3; background: #0d1117; } }
+:root { font-family: system-ui, sans-serif; color: #1f2328; background: #fff; color-scheme: light; }
+body { margin: 0; background: #fff; }
 main { max-width: 1000px; margin: 0 auto; padding: 16px; }
 form { display: grid; gap: 8px; max-width: 420px; }
 label { display: grid; gap: 4px; }
@@ -9,4 +9,4 @@ th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #8884; ver
 [role='alert'], [role='status'] { color: #cf222e; }
 .file-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
 .file-tabs button[aria-pressed='true'] { font-weight: 600; }
-pre { max-height: 420px; overflow: auto; padding: 8px; background: #8881; border: 1px solid #8884; font-size: 12px; white-space: pre; }
+pre { max-height: 420px; overflow: auto; padding: 8px; background: #f6f8fa; border: 1px solid #d0d7de; font-size: 12px; white-space: pre; }
