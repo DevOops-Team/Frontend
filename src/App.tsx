@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createJob, listJobs, type Job, type JobInput } from './api';
+import { ExampleFiles } from './components/ExampleFiles';
 import { JobList } from './components/JobList';
 import { UploadForm } from './components/UploadForm';
 
@@ -36,6 +37,7 @@ export function App() {
       <p className="muted">job.yaml(JobSet) · train.py · 학습 데이터를 올리면 MultiKueue가 비어 있는 EKS 클러스터로 보냅니다.</p>
       <section>
         <h2>작업 제출</h2>
+        <ExampleFiles />
         <UploadForm onSubmit={submit} />
       </section>
       <section>

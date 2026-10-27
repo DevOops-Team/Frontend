@@ -1,4 +1,4 @@
-:root { font-family: system-ui, sans-serif; color: #1f2328; background: #fff; color-scheme: light; }
+:root { font-family: system-ui, sans-serif; color: #1f2328; background: #fff; color-scheme: only light; }
 body { margin: 0; background: #fff; }
 main { max-width: 1000px; margin: 0 auto; padding: 16px; }
 form { display: grid; gap: 8px; max-width: 420px; }
@@ -10,3 +10,11 @@ th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #8884; ver
 .file-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
 .file-tabs button[aria-pressed='true'] { font-weight: 600; }
 pre { max-height: 420px; overflow: auto; padding: 8px; background: #f6f8fa; border: 1px solid #d0d7de; font-size: 12px; white-space: pre; }
+.examples { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; }
+.modal-backdrop { position: fixed; inset: 0; background: rgba(31, 35, 40, 0.45); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.modal { background: #fff; color: #1f2328; width: min(900px, 100%); max-height: 90vh; display: flex; flex-direction: column; border-radius: 8px; box-shadow: 0 8px 24px rgba(31, 35, 40, 0.25); }
+.modal header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #d0d7de; }
+.modal header h3 { margin: 0; font-family: ui-monospace, monospace; }
+.modal-body { padding: 12px 16px; overflow: auto; }
+.modal-body pre { max-height: none; }
+.modal-body th { width: 140px; }
