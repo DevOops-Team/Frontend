@@ -6,7 +6,7 @@
 
 - **예시 파일:** 제출 폼 위의 `예시 job.yaml`·`예시 train.py`·`예시 학습 데이터` 버튼을 누르면 모달로 내용을 보여 준다. `닫기`, Esc, 바깥 클릭으로 닫는다.
   - `src/examples/`는 Backend 저장소 `examples/`의 복사본이다(`?raw` import로 번들에 넣는다). 학습 데이터는 설명과 앞 20행만 넣었다.
-  - 예시는 DDP 학습이다. GPU 노드 2대에 Pod 1개씩(`torchrun --nnodes=2`), 체크포인트는 rank 0만 S3(`/ckpt`)에 1000 step마다 쓴다.
+  - 예시는 DDP 학습이다. GPU 노드 2대에 Pod 1개씩(`torchrun --nnodes=2`), 체크포인트는 rank 0만 S3(`/ckpt`)에 1000 step마다 쓴다. 진행 상태는 train.py가 로컬 파일에 쓰고, 백엔드가 넣은 sidecar가 DynamoDB에 올린다.
 - **작업 제출:** `job.yaml`(JobSet), `train.py`, 학습 데이터(여러 파일 가능)를 고른다. 세 가지가 모두 있어야 제출 버튼이 켜진다.
   - 제출에 성공하면 작업 ID를 보여 주고, 실패하면 백엔드 오류 메시지를 그대로 보여 준다.
 - **작업 목록:** 2초마다 `GET /api/jobs`로 갱신한다.
