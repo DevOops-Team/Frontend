@@ -32,7 +32,7 @@ const DATA_DESCRIPTION = (
         </tr>
         <tr>
           <th>모델</th>
-          <td>train.py의 MLP(8 → 256 → 1), MSE loss. loss가 약 0.01 근처까지 내려가면 정상</td>
+          <td>train.py의 MLP(8 → 256 → 1), MSE loss, DDP 2 rank(GPU 노드 2대). loss가 약 0.01 근처까지 내려가면 정상</td>
         </tr>
       </tbody>
     </table>

@@ -12,6 +12,8 @@ describe('ExampleFiles', () => {
     const dialog = screen.getByRole('dialog', { name: 'job.yaml' });
     expect(dialog).toHaveAttribute('aria-modal', 'true');
     expect(dialog).toHaveTextContent('kind: JobSet');
+    expect(dialog).toHaveTextContent('parallelism: 2');
+    expect(dialog).toHaveTextContent('torchrun --nnodes=2');
   });
 
   it('opens the example train.py', async () => {
@@ -20,6 +22,7 @@ describe('ExampleFiles', () => {
     await userEvent.click(screen.getByRole('button', { name: '예시 train.py' }));
 
     expect(screen.getByRole('dialog', { name: 'train.py' })).toHaveTextContent('def save_checkpoint');
+    expect(screen.getByRole('dialog', { name: 'train.py' })).toHaveTextContent('DistributedDataParallel');
   });
 
   it('describes the example training data and shows its first rows', async () => {
