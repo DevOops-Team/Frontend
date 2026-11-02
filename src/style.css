@@ -111,3 +111,4 @@ body { overflow:hidden; }
 .page-home .card.flush { min-height:0; }
 @media (max-height:700px) { .page-home { grid-template-rows:110px 76px 70px minmax(0,1fr); gap:10px; padding-top:12px; padding-bottom:12px; }.page-home .guided-home-head h1 { font-size:23px; }.page-home .eyebrow { display:none; }.page-home td { padding-top:5px; padding-bottom:5px; } }
 @media (max-width:700px) { .page-home { grid-template-rows:130px minmax(0,1fr); } }
+.btn.primary:hover:not(:disabled) { background:var(--accent-strong); border-color:var(--accent-strong); color:var(--on-accent); filter:none; }
