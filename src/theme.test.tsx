@@ -21,9 +21,9 @@ describe('appearance preferences', () => {
     await user.click(screen.getByRole('button', { name: '화이트 모드' }));
     expect(document.documentElement).toHaveAttribute('data-theme', 'light');
   });
-  it('uses OS dark preference when no choice is saved', () => {
+  it('defaults to light even when the OS prefers dark', () => {
     vi.stubGlobal('matchMedia', () => ({ matches: true }));
     render(<App />);
-    expect(document.documentElement).toHaveAttribute('data-theme', 'dark');
+    expect(document.documentElement).toHaveAttribute('data-theme', 'light');
   });
 });
