@@ -1,43 +1,37 @@
-import { useCallback, useEffect, useState } from 'react';
-import { createJob, listJobs, type Job, type JobInput } from './api';
-import { JobDetail } from './components/JobDetail';
-import { JobList } from './components/JobList';
+import { useEffect, useState } from 'react';
 import { LaunchWizard } from './components/LaunchWizard';
-import { appendHistory, type LossHistory } from './lossHistory';
+import { RunDetail } from './components/RunDetail';
+import { RunList } from './components/RunList';
+import { TICK_MS, createRun, tick, type Run, type RunMeta } from './mock/runs';
+import { seedRuns } from './mock/seed';
+import type { TrainingRequest } from './lib/request';
 
-const POLL_MS = 2000;
-
-export function App() {
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [history, setHistory] = useState<LossHistory>({});
-  const [error, setError] = useState<string | null>(null);
+// 전부 목업: 시드 실행 5개로 시작하고, 타이머로 단계를 진행시킨다. 백엔드를 호출하지 않는다.
+export function App({ initialRuns }: { initialRuns?: Run[] }) {
+  const [runs, setRuns] = useState<Run[]>(() => initialRuns ?? seedRuns());
   const [selected, setSelected] = useState<string | null>(null);
 
-  const refresh = useCallback(
-    () =>
-      listJobs()
-        .then((js) => {
-          setJobs(js);
-          setHistory((h) => appendHistory(h, js));
-          setError(null);
-        })
-        .catch((err) => setError(err instanceof Error ? err.message : String(err))),
-    [],
-  );
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setRuns((rs) => {
+        const next = rs.map(tick);
+        return next.every((r, i) => r === rs[i]) ? rs : next;
+      });
+    }, TICK_MS);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
-    refresh();
-    const timer = setInterval(refresh, POLL_MS);
-    return () => clearInterval(timer);
-  }, [refresh]);
+    window.scrollTo?.({ top: 0 });
+  }, [selected]);
 
-  async function submit(input: JobInput) {
-    const res = await createJob(input);
-    await refresh();
-    return res;
+  function submit(request: TrainingRequest, meta: RunMeta): string {
+    const run = createRun(request, meta);
+    setRuns((rs) => [run, ...rs]);
+    return run.id;
   }
 
-  const running = jobs.filter((j) => j.phase === 'Running').length;
+  const running = runs.filter((r) => r.status === 'Running' || r.status === 'Queued').length;
 
   return (
     <>
@@ -49,46 +43,36 @@ export function App() {
           </button>
           <nav className="topnav-links" aria-label="주 메뉴">
             <button type="button" aria-current={selected === null ? 'page' : undefined} onClick={() => setSelected(null)}>
-              학습 작업
+              파인튜닝
             </button>
           </nav>
+          <span className="mock-tag" title="모든 데이터는 브라우저 안의 목업입니다">
+            목업 데이터
+          </span>
           <span className="topnav-meta small muted">
-            실행 중 {running} · 전체 {jobs.length}
+            진행 중 {running} · 전체 {runs.length}
           </span>
         </div>
       </header>
 
       <main className="page">
-        {error && (
-          <p role="status" className="banner">
-            백엔드에 연결할 수 없습니다: {error}
-          </p>
-        )}
-
         {selected ? (
-          <JobDetail
-            jobId={selected}
-            job={jobs.find((j) => j.id === selected)}
-            history={history[selected] ?? []}
-            onBack={() => setSelected(null)}
-          />
+          <RunDetail runId={selected} run={runs.find((r) => r.id === selected)} onBack={() => setSelected(null)} />
         ) : (
           <>
             <section className="hero">
-              <h1>새 학습 작업</h1>
-              <p className="muted">
-                코드와 데이터를 올리고 GPU를 고르면 job.yaml(JobSet)을 만들어 MultiKueue가 비어 있는 EKS 클러스터로 보냅니다.
-              </p>
+              <h1>새 파인튜닝</h1>
+              <p className="muted">코드도 YAML도 필요 없습니다. 태스크를 고르고, 베이스 모델과 데이터셋을 정하면 나머지는 플랫폼이 맞춰 줍니다.</p>
             </section>
-            <LaunchWizard onSubmit={submit} />
+            <LaunchWizard onSubmit={submit} onOpen={setSelected} />
 
             <section className="runs-section">
               <div className="section-head">
                 <h2>실행 목록</h2>
-                <span className="small muted">2초마다 갱신</span>
+                <span className="small muted">목업 · {TICK_MS / 1000}초마다 진행</span>
               </div>
               <div className="card flush">
-                <JobList jobs={jobs} onSelect={setSelected} />
+                <RunList runs={runs} onSelect={setSelected} />
               </div>
             </section>
           </>

@@ -1,112 +1,192 @@
-import { useMemo, useState, type ReactNode } from 'react';
-import type { JobInput } from '../api';
-// Backend 저장소 examples/의 복사본.
-import trainPy from '../examples/train.py?raw';
-import trainHead from '../examples/train-head.csv?raw';
+import { useState, type ReactNode } from 'react';
+import { GPUS, TASKS, gpuOf, modelOf, searchModels, supportsLora, taskOf, type TaskId } from '../mock/catalog';
+import type { RunMeta } from '../mock/runs';
+import { formatCount } from '../lib/format';
 import {
-  DEFAULT_OPTIONS,
-  HARDWARE,
-  MAX_NODES,
-  MIN_NODES,
-  buildJobYaml,
-  hardwareOf,
-  totalGpus,
-  validateOptions,
-  type JobOptions,
-} from '../jobTemplate';
+  PRESETS,
+  estimate,
+  formatMinutes,
+  presetHyper,
+  recommendGpu,
+  requiredMemoryGb,
+  validateHyper,
+  type GpuChoice,
+  type Hyperparameters,
+  type PresetId,
+} from '../lib/estimate';
+import { autoMap, labelDistribution, splitCounts, validateMapping, type ColumnMapping } from '../lib/mapping';
+import { buildRequest, defaultRunName, validateRunName, type DatasetSource, type TrainingRequest } from '../lib/request';
+import { DatasetStep, type LoadedDataset } from './DatasetStep';
 
 interface Props {
-  onSubmit: (input: JobInput) => Promise<{ id: string }>;
+  onSubmit: (request: TrainingRequest, meta: RunMeta) => string;
+  onOpen?: (id: string) => void;
 }
 
-const STEPS = ['코드', '데이터', '컴퓨트', '검토 및 실행'] as const;
+const STEPS = ['태스크', '베이스 모델', '데이터셋', '학습 설정', '검토 및 시작'] as const;
 
-function formatSize(bytes: number) {
-  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
-  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-  return `${bytes}B`;
-}
-
-function FileChips({ files }: { files: File[] }) {
-  if (files.length === 0) return <p className="muted">아직 선택한 파일이 없습니다</p>;
-  return (
-    <ul className="chips" aria-label="선택한 파일">
-      {files.map((f) => (
-        <li key={f.name}>
-          <span className="chip-name">{f.name}</span> <span className="muted">{formatSize(f.size)}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function Field({ label, error, hint, children }: { label: string; error?: string; hint?: string; children: ReactNode }) {
+function NumField({ label, value, onChange, error, step, min }: { label: string; value: number; onChange: (n: number) => void; error?: string; step?: string; min?: number }) {
   return (
     <label className="field">
       <span className="field-label">{label}</span>
-      {children}
-      {error ? <span className="field-error">{error}</span> : hint && <span className="muted field-hint">{hint}</span>}
+      <input type="number" value={Number.isFinite(value) ? value : ''} step={step} min={min} onChange={(e) => onChange(e.target.valueAsNumber)} />
+      {error && <span className="field-error">{error}</span>}
     </label>
   );
 }
 
-// "새 학습 작업" 마법사: 코드 → 데이터 → 컴퓨트 → 검토 및 실행.
-// job.yaml은 컴퓨트 단계의 값으로 만들고(buildJobYaml), 실행할 때 File('job.yaml')로 바꿔 올린다.
-export function LaunchWizard({ onSubmit }: Props) {
+function SummaryCard({ title, onEdit, children }: { title: string; onEdit: () => void; children: ReactNode }) {
+  return (
+    <div className="summary-card">
+      <div className="summary-card-head">
+        <span className="small muted">{title}</span>
+        <button type="button" className="link small" onClick={onEdit} aria-label={`${title} 수정`}>
+          수정
+        </button>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// 노코드 파인튜닝 마법사: 태스크 → 베이스 모델 → 데이터셋 → 학습 설정 → 검토 및 시작. 모든 값은 목업 실행으로만 들어간다.
+export function LaunchWizard({ onSubmit, onOpen }: Props) {
   const [step, setStep] = useState(0);
-  const [train, setTrain] = useState<File | null>(null);
-  const [data, setData] = useState<File[]>([]);
-  const [options, setOptions] = useState<JobOptions>(DEFAULT_OPTIONS);
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [taskId, setTaskId] = useState<TaskId | null>(null);
+  const [modelId, setModelId] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [source, setSource] = useState<DatasetSource>('sample');
+  const [dataset, setDataset] = useState<LoadedDataset | null>(null);
+  const [mapping, setMapping] = useState<ColumnMapping>({});
+  const [trainPercent, setTrainPercent] = useState(90);
+  const [preset, setPreset] = useState<PresetId | 'custom'>('balanced');
+  const [hyper, setHyper] = useState<Hyperparameters>(presetHyper('balanced', undefined));
+  const [gpuAuto, setGpuAuto] = useState(true);
+  const [gpuManual, setGpuManual] = useState<GpuChoice>({ gpuId: 'a10g', count: 1 });
+  const [name, setName] = useState('');
+  const [nameEdited, setNameEdited] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [doneId, setDoneId] = useState<string | null>(null);
 
-  const errors = useMemo(() => validateOptions(options), [options]);
-  const yaml = useMemo(() => buildJobYaml(options), [options]);
-  const hw = hardwareOf(options);
+  const task = taskId ? taskOf(taskId) : null;
+  const model = modelId ? modelOf(modelId) : undefined;
+  const models = taskId ? searchModels(taskId, query) : [];
+  const mapCheck = task && dataset ? validateMapping(task, dataset.columns, mapping, dataset.rows) : null;
+  const hyperErrors = validateHyper(hyper);
+  const recommended = model ? recommendGpu(model, hyper.lora) : null;
+  const gpu = gpuAuto && recommended ? recommended : gpuManual;
+  const split = dataset ? splitCounts(dataset.totalRows, trainPercent) : { train: 0, validation: 0 };
+  const est = model ? estimate({ model, gpu, trainRows: split.train, hyper }) : null;
+  const runName = nameEdited ? name : model && dataset ? defaultRunName(model.id, dataset.ref) : '';
+  const nameError = validateRunName(runName);
+  const needMem = model ? requiredMemoryGb(model, hyper.lora) : 0;
+  const gpuTooSmall = model && model.params > 0 && gpuOf(gpu.gpuId).memoryGb * gpu.count < needMem;
 
-  const stepDone = [train !== null, data.length > 0, Object.keys(errors).length === 0];
+  const request =
+    task && model && dataset
+      ? buildRequest({ name: runName, task: task.id, baseModel: model.id, source, datasetRef: dataset.ref, format: dataset.format, mapping, trainPercent, preset, hyper, gpu, gpuAuto })
+      : null;
+  const json = request ? JSON.stringify(request, null, 2) : '';
+
+  const stepDone = [
+    taskId !== null,
+    model !== undefined,
+    !!mapCheck && mapCheck.errors.length === 0,
+    Object.keys(hyperErrors).length === 0 && !gpuTooSmall,
+    nameError === null,
+  ];
   const canEnter = (i: number) => stepDone.slice(0, i).every(Boolean);
 
-  function set<K extends keyof JobOptions>(key: K, value: JobOptions[K]) {
-    setOptions((o) => ({ ...o, [key]: value }));
+  function chooseTask(id: TaskId) {
+    if (id === taskId) return;
+    setTaskId(id);
+    setModelId(null);
+    setQuery('');
+    setDataset(null);
+    setMapping({});
+  }
+
+  function chooseModel(id: string) {
+    setModelId(id);
+    const m = modelOf(id);
+    setHyper((h) => (preset === 'custom' ? { ...h, lora: h.lora && !!m && supportsLora(m) } : presetHyper(preset, m)));
+  }
+
+  function chooseDataset(d: LoadedDataset | null) {
+    setDataset(d);
+    setMapping(d && task ? autoMap(task, d.columns) : {});
+  }
+
+  function choosePreset(id: PresetId) {
+    setPreset(id);
+    setHyper(presetHyper(id, model));
+  }
+
+  function editHyper<K extends keyof Hyperparameters>(key: K, value: Hyperparameters[K]) {
+    setPreset('custom');
+    setHyper((h) => ({ ...h, [key]: value }));
   }
 
   function reset() {
     setStep(0);
-    setTrain(null);
-    setData([]);
-    setOptions(DEFAULT_OPTIONS);
-    setResult(null);
-    setError(null);
+    setTaskId(null);
+    setModelId(null);
+    setQuery('');
+    setSource('sample');
+    setDataset(null);
+    setMapping({});
+    setTrainPercent(90);
+    setPreset('balanced');
+    setHyper(presetHyper('balanced', undefined));
+    setGpuAuto(true);
+    setName('');
+    setNameEdited(false);
+    setDoneId(null);
   }
 
-  async function launch() {
-    if (!train) return;
-    setBusy(true);
-    setError(null);
+  function launch() {
+    if (!request || !task || !dataset || !est) return;
+    const labels = task.labelRole && mapping[task.labelRole]
+      ? labelDistribution(dataset.rows, mapping[task.labelRole], 5).map((l) => l.label).filter((l) => l !== '기타' && l !== '(빈 값)')
+      : [];
+    const id = onSubmit(request, {
+      datasetTitle: dataset.title,
+      rows: dataset.totalRows,
+      labels,
+      estimate: est,
+      gpuLabel: `${gpuOf(gpu.gpuId).label} × ${gpu.count}`,
+    });
+    setDoneId(id);
+  }
+
+  async function copyJson() {
     try {
-      const job = new File([yaml], 'job.yaml', { type: 'application/yaml' });
-      const res = await onSubmit({ job, train, data });
-      setResult(res.id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
+      await navigator.clipboard?.writeText(json);
+    } catch {
+      // 클립보드 권한이 없으면 무시한다. 내용은 화면에서 직접 복사할 수 있다.
     }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
   }
 
-  if (result) {
+  if (doneId) {
     return (
       <div className="card wizard-done">
         <div className="done-icon" aria-hidden="true">✓</div>
-        <h3>작업을 실행했습니다</h3>
+        <h3>파인튜닝을 시작했습니다</h3>
         <p>
-          작업 ID <code>{result}</code> · 아래 실행 목록에서 진행 상황을 볼 수 있습니다.
+          <strong>{request?.name}</strong> <span className="muted mono small">({doneId})</span> · 아래 실행 목록에서 진행 상황을 볼 수 있습니다.
         </p>
-        <button type="button" className="btn" onClick={reset}>
-          새 작업 만들기
-        </button>
+        <div className="done-actions">
+          {onOpen && (
+            <button type="button" className="btn primary" onClick={() => onOpen(doneId)}>
+              실행 상세 보기
+            </button>
+          )}
+          <button type="button" className="btn" onClick={reset}>
+            새 작업 만들기
+          </button>
+        </div>
       </div>
     );
   }
@@ -116,12 +196,7 @@ export function LaunchWizard({ onSubmit }: Props) {
       <ol className="stepper" aria-label="단계">
         {STEPS.map((label, i) => (
           <li key={label} data-state={i === step ? 'current' : i < step && stepDone[i] ? 'done' : 'todo'}>
-            <button
-              type="button"
-              onClick={() => setStep(i)}
-              disabled={!canEnter(i)}
-              aria-current={i === step ? 'step' : undefined}
-            >
+            <button type="button" onClick={() => setStep(i)} disabled={!canEnter(i)} aria-current={i === step ? 'step' : undefined}>
               <span className="step-num">{i < step && stepDone[i] ? '✓' : i + 1}</span>
               <span className="step-label">{label}</span>
             </button>
@@ -131,198 +206,240 @@ export function LaunchWizard({ onSubmit }: Props) {
 
       <div className="wizard-body">
         {step === 0 && (
-          <section aria-labelledby="step-code">
-            <h3 id="step-code">학습 코드</h3>
-            <p className="muted">
-              torchrun으로 실행할 <code>train.py</code>를 올리세요. 진행 상태 파일·체크포인트 규약은 예시 코드를 참고하세요.
-            </p>
-            <div className="dropzone">
-              <label className="btn">
-                train.py 선택
-                <input
-                  className="visually-hidden"
-                  type="file"
-                  accept=".py"
-                  aria-label="train.py 파일"
-                  onChange={(e) => setTrain(e.target.files?.[0] ?? null)}
-                />
-              </label>
-              <span className="muted">또는</span>
-              <button type="button" className="btn ghost" onClick={() => setTrain(new File([trainPy], 'train.py'))}>
-                예시 train.py 사용
-              </button>
-            </div>
-            <FileChips files={train ? [train] : []} />
-          </section>
-        )}
-
-        {step === 1 && (
-          <section aria-labelledby="step-data">
-            <h3 id="step-data">학습 데이터</h3>
-            <p className="muted">여러 파일을 올릴 수 있습니다. Pod 안의 데이터 디렉터리에 그대로 들어갑니다.</p>
-            <div className="dropzone">
-              <label className="btn">
-                데이터 파일 선택
-                <input
-                  className="visually-hidden"
-                  type="file"
-                  multiple
-                  aria-label="학습 데이터 파일"
-                  onChange={(e) => setData(Array.from(e.target.files ?? []))}
-                />
-              </label>
-              <span className="muted">또는</span>
-              <button type="button" className="btn ghost" onClick={() => setData([new File([trainHead], 'train.csv')])}>
-                예시 데이터 사용 (train.csv 앞 20행)
-              </button>
-            </div>
-            <FileChips files={data} />
-          </section>
-        )}
-
-        {step === 2 && (
-          <section aria-labelledby="step-compute">
-            <h3 id="step-compute">컴퓨트</h3>
-            <fieldset className="hw-grid">
-              <legend>하드웨어</legend>
-              {HARDWARE.map((h) => (
-                <label key={h.id} className="hw-card" data-selected={h.id === options.hardwareId}>
-                  <input
-                    type="radio"
-                    name="hardware"
-                    value={h.id}
-                    checked={h.id === options.hardwareId}
-                    onChange={() => set('hardwareId', h.id)}
-                    className="visually-hidden"
-                  />
-                  <span className="hw-title">{`${h.gpu} × ${h.gpus}`}</span>
-                  <span className="hw-instance">{h.instanceType}</span>
-                  <span className="muted hw-spec">{`${h.vcpu} vCPU · ${h.memoryGiB} GiB`}</span>
-                  <span className="muted hw-note">{h.note}</span>
-                </label>
+          <section aria-labelledby="step-task">
+            <h3 id="step-task">무엇을 학습할까요?</h3>
+            <p className="muted">태스크를 고르면 맞는 모델과 데이터 형식만 보여 드립니다. 코드나 YAML은 필요 없습니다.</p>
+            <div className="option-grid" role="radiogroup" aria-label="태스크">
+              {TASKS.map((t) => (
+                <button key={t.id} type="button" role="radio" aria-checked={t.id === taskId} className="option-card task-card" data-selected={t.id === taskId} onClick={() => chooseTask(t.id)}>
+                  <span className="task-icon" aria-hidden="true">{t.icon}</span>
+                  <span className="option-title">{t.name}</span>
+                  <span className="small">{t.description}</span>
+                  <span className="small muted">{t.example}</span>
+                </button>
               ))}
-            </fieldset>
-
-            <div className="compute-row">
-              <div className="field">
-                <span className="field-label" id="nodes-label">노드 수</span>
-                <div className="number-stepper" role="group" aria-labelledby="nodes-label">
-                  <button
-                    type="button"
-                    aria-label="노드 줄이기"
-                    disabled={options.nodes <= MIN_NODES}
-                    onClick={() => set('nodes', options.nodes - 1)}
-                  >
-                    −
-                  </button>
-                  <output aria-live="polite" aria-label="선택한 노드 수">
-                    {options.nodes}
-                  </output>
-                  <button
-                    type="button"
-                    aria-label="노드 늘리기"
-                    disabled={options.nodes >= MAX_NODES}
-                    onClick={() => set('nodes', options.nodes + 1)}
-                  >
-                    +
-                  </button>
-                </div>
-                <span className="muted field-hint">노드마다 Pod 1개 · 최대 {MAX_NODES}대</span>
-              </div>
-
-              <div className="field">
-                <span className="field-label">용량 유형</span>
-                <label className="toggle">
-                  <input type="checkbox" checked={options.spot} onChange={(e) => set('spot', e.target.checked)} />
-                  <span className="toggle-track" aria-hidden="true" />
-                  Spot 인스턴스 선호
-                </label>
-                <span className="muted field-hint">job.yaml에 참고용 주석으로만 남습니다</span>
-              </div>
-            </div>
-
-            <div className="form-grid">
-              <Field label="작업 이름" error={errors.name} hint="소문자·숫자·하이픈">
-                <input value={options.name} onChange={(e) => set('name', e.target.value)} />
-              </Field>
-              <Field label="컨테이너 이미지" error={errors.image}>
-                <input value={options.image} onChange={(e) => set('image', e.target.value)} />
-              </Field>
-              <Field label="총 step" error={errors.totalSteps}>
-                <input
-                  type="number"
-                  min={1}
-                  value={options.totalSteps}
-                  onChange={(e) => set('totalSteps', e.target.valueAsNumber)}
-                />
-              </Field>
-              <Field label="체크포인트 간격 (step)" error={errors.ckptEvery}>
-                <input
-                  type="number"
-                  min={1}
-                  value={options.ckptEvery}
-                  onChange={(e) => set('ckptEvery', e.target.valueAsNumber)}
-                />
-              </Field>
-              <Field label="최대 재시작 횟수" error={errors.maxRestarts} hint="Pod가 실패하면 체크포인트에서 재개">
-                <input
-                  type="number"
-                  min={0}
-                  max={10}
-                  value={options.maxRestarts}
-                  onChange={(e) => set('maxRestarts', e.target.valueAsNumber)}
-                />
-              </Field>
             </div>
           </section>
         )}
 
-        {step === 3 && (
-          <section aria-labelledby="step-review" className="review">
-            <div>
-              <h3 id="step-review">검토</h3>
-              <dl className="summary">
-                <div>
-                  <dt>총 GPU</dt>
-                  <dd className="summary-big">{totalGpus(options)}개</dd>
-                </div>
-                <div>
-                  <dt>하드웨어</dt>
-                  <dd>{`${hw.gpu} × ${hw.gpus} / ${hw.instanceType} × ${options.nodes}대`}</dd>
-                </div>
-                <div>
-                  <dt>용량 유형</dt>
-                  <dd>{options.spot ? 'Spot 선호' : 'On-Demand'}</dd>
-                </div>
-                <div>
-                  <dt>학습</dt>
-                  <dd>{`${options.totalSteps} step · ${options.ckptEvery} step마다 체크포인트 · 재시작 최대 ${options.maxRestarts}회`}</dd>
-                </div>
-                <div>
-                  <dt>파일</dt>
-                  <dd>{[train?.name, ...data.map((f) => f.name)].filter(Boolean).join(', ')}</dd>
-                </div>
-              </dl>
-            </div>
-            <div className="code-preview">
-              <div className="code-head">
-                <span>job.yaml</span>
-                <span className="muted">자동 생성 · 읽기 전용</span>
+        {step === 1 && task && (
+          <section aria-labelledby="step-model">
+            <h3 id="step-model">베이스 모델</h3>
+            <p className="muted">
+              <strong>{task.name}</strong>에 쓸 수 있는 모델입니다.
+            </p>
+            <input className="text-input search" type="search" placeholder="모델 이름·라이선스로 검색" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="모델 검색" />
+            {models.length === 0 ? (
+              <p className="muted">검색 결과가 없습니다.</p>
+            ) : (
+              <div className="table-wrap model-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th />
+                      <th>모델</th>
+                      <th>크기</th>
+                      <th>라이선스</th>
+                      <th>언어</th>
+                      <th>추천 GPU</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {models.map((m) => {
+                      const rec = recommendGpu(m, supportsLora(m));
+                      return (
+                        <tr key={m.id} className="clickable" data-selected={m.id === modelId} onClick={() => chooseModel(m.id)}>
+                          <td>
+                            <input type="radio" name="model" checked={m.id === modelId} onChange={() => chooseModel(m.id)} aria-label={m.id} />
+                          </td>
+                          <td>
+                            <div className="mono">{m.id}</div>
+                            <div className="small muted">{m.description}</div>
+                          </td>
+                          <td className="mono small">{m.paramsLabel}</td>
+                          <td>
+                            <span className="tag">{m.license}</span>
+                          </td>
+                          <td className="small">{m.language}</td>
+                          <td className="small">
+                            {`${gpuOf(rec.gpuId).label.replace('NVIDIA ', '')}${rec.count > 1 ? ` × ${rec.count}` : ''}`}
+                            {supportsLora(m) && <div className="muted">LoRA 기준</div>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-              <pre aria-label="생성된 job.yaml">{yaml}</pre>
+            )}
+          </section>
+        )}
+
+        {step === 2 && task && (
+          <DatasetStep
+            task={task}
+            source={source}
+            onSource={setSource}
+            dataset={dataset}
+            onDataset={chooseDataset}
+            mapping={mapping}
+            onMapping={setMapping}
+            trainPercent={trainPercent}
+            onTrainPercent={setTrainPercent}
+          />
+        )}
+
+        {step === 3 && model && (
+          <section aria-labelledby="step-train">
+            <h3 id="step-train">학습 설정</h3>
+            <div className="option-grid three" role="radiogroup" aria-label="프리셋">
+              {PRESETS.map((p) => (
+                <button key={p.id} type="button" role="radio" aria-checked={preset === p.id} className="option-card" data-selected={preset === p.id} onClick={() => choosePreset(p.id)}>
+                  <span className="option-title">{p.label}</span>
+                  <span className="small muted">{p.description}</span>
+                </button>
+              ))}
             </div>
+            {preset === 'custom' && <p className="small muted">고급 설정을 직접 바꿔 '사용자 지정' 상태입니다.</p>}
+
+            <details className="advanced">
+              <summary>고급</summary>
+              <div className="form-grid">
+                <NumField label="epoch" value={hyper.epochs} min={1} onChange={(n) => editHyper('epochs', n)} error={hyperErrors.epochs} />
+                <NumField label="learning rate" value={hyper.learningRate} step="0.00001" onChange={(n) => editHyper('learningRate', n)} error={hyperErrors.learningRate} />
+                <NumField label="batch size" value={hyper.batchSize} min={1} onChange={(n) => editHyper('batchSize', n)} error={hyperErrors.batchSize} />
+                <div className="field">
+                  <span className="field-label">LoRA</span>
+                  <label className="toggle">
+                    <input type="checkbox" checked={hyper.lora} disabled={!supportsLora(model)} onChange={(e) => editHyper('lora', e.target.checked)} />
+                    <span className="toggle-track" aria-hidden="true" />
+                    LoRA 사용
+                  </label>
+                  {!supportsLora(model) && <span className="muted field-hint">1B 이상 LLM에서만 쓸 수 있습니다</span>}
+                </div>
+                {hyper.lora && <NumField label="LoRA rank" value={hyper.loraRank} min={1} onChange={(n) => editHyper('loraRank', n)} error={hyperErrors.loraRank} />}
+              </div>
+            </details>
+
+            <div className="compute-box">
+              <div>
+                <h4>컴퓨트</h4>
+                {recommended && (
+                  <p className="small">
+                    추천: <strong>{`${gpuOf(recommended.gpuId).label} × ${recommended.count}`}</strong>
+                    {needMem > 0 && <span className="muted">{` · 필요한 GPU 메모리 약 ${needMem}GB`}</span>}
+                  </p>
+                )}
+                <label className="toggle">
+                  <input type="checkbox" checked={!gpuAuto} onChange={(e) => { setGpuAuto(!e.target.checked); if (recommended) setGpuManual(recommended); }} />
+                  <span className="toggle-track" aria-hidden="true" />
+                  직접 고르기
+                </label>
+                {!gpuAuto && (
+                  <div className="gpu-manual">
+                    <select value={gpuManual.gpuId} onChange={(e) => setGpuManual({ ...gpuManual, gpuId: e.target.value })} aria-label="GPU 종류">
+                      {GPUS.map((g) => (
+                        <option key={g.id} value={g.id}>
+                          {`${g.label} · $${g.pricePerHour}/시간`}
+                        </option>
+                      ))}
+                    </select>
+                    <select value={gpuManual.count} onChange={(e) => setGpuManual({ ...gpuManual, count: Number(e.target.value) })} aria-label="GPU 개수">
+                      {[1, 2, 4, 8].map((n) => (
+                        <option key={n} value={n}>{`× ${n}`}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {gpuTooSmall && <p className="field-error">선택한 GPU 메모리가 부족합니다 (약 {needMem}GB 필요)</p>}
+              </div>
+              {est && (
+                <dl className="estimate" aria-label="예상">
+                  <div>
+                    <dt>예상 시간</dt>
+                    <dd>{formatMinutes(est.minutes)}</dd>
+                  </div>
+                  <div>
+                    <dt>예상 비용</dt>
+                    <dd>${est.costUsd.toFixed(2)}</dd>
+                  </div>
+                  <div>
+                    <dt>학습 행</dt>
+                    <dd>{formatCount(split.train)}</dd>
+                  </div>
+                </dl>
+              )}
+            </div>
+            <p className="small muted">예상 시간·비용은 목업 공식(모델 크기 × 행 수 × epoch ÷ GPU 속도)으로 계산합니다.</p>
+          </section>
+        )}
+
+        {step === 4 && task && model && dataset && est && request && (
+          <section aria-labelledby="step-review">
+            <h3 id="step-review">검토 및 시작</h3>
+            <label className="field name-field">
+              <span className="field-label">실행 이름</span>
+              <input
+                value={runName}
+                onChange={(e) => {
+                  setNameEdited(true);
+                  setName(e.target.value);
+                }}
+                aria-label="실행 이름"
+              />
+              {nameError ? <span className="field-error">{nameError}</span> : <span className="muted field-hint">{`등록될 모델: devoops/${runName}:v1`}</span>}
+            </label>
+
+            <div className="summary-grid">
+              <SummaryCard title="태스크" onEdit={() => setStep(0)}>
+                <strong>{task.name}</strong>
+                <span className="small muted">{task.description}</span>
+              </SummaryCard>
+              <SummaryCard title="베이스 모델" onEdit={() => setStep(1)}>
+                <strong className="mono">{model.id}</strong>
+                <span className="small muted">{`${model.paramsLabel} · ${model.license}`}</span>
+              </SummaryCard>
+              <SummaryCard title="데이터셋" onEdit={() => setStep(2)}>
+                <strong>{dataset.title}</strong>
+                <span className="small muted">{`${formatCount(dataset.totalRows)}행 · 학습 ${formatCount(split.train)} / 검증 ${formatCount(split.validation)}`}</span>
+                <span className="small">
+                  {Object.entries(request.dataset.columns).map(([role, col]) => (
+                    <span key={role} className="map-pill">
+                      <code>{col}</code> → {role}
+                    </span>
+                  ))}
+                </span>
+              </SummaryCard>
+              <SummaryCard title="학습 설정" onEdit={() => setStep(3)}>
+                <strong>{preset === 'custom' ? '사용자 지정' : PRESETS.find((p) => p.id === preset)!.label}</strong>
+                <span className="small muted">
+                  {`epoch ${hyper.epochs} · lr ${hyper.learningRate} · batch ${hyper.batchSize} · ${hyper.lora ? `LoRA r=${hyper.loraRank}` : '전체 미세조정'}`}
+                </span>
+              </SummaryCard>
+              <SummaryCard title="컴퓨트 · 예상" onEdit={() => setStep(3)}>
+                <strong>{`${gpuOf(gpu.gpuId).label} × ${gpu.count}`}</strong>
+                <span className="small muted">{`${gpuAuto ? '자동 추천' : '직접 선택'} · ${formatMinutes(est.minutes)} · $${est.costUsd.toFixed(2)}`}</span>
+              </SummaryCard>
+            </div>
+
+            <details className="api-view">
+              <summary>API 요청으로 보기</summary>
+              <div className="code-preview">
+                <div className="code-head">
+                  <span>POST /v1/fine-tunes</span>
+                  <button type="button" className="link small" onClick={copyJson}>
+                    {copied ? '복사됨' : '복사'}
+                  </button>
+                </div>
+                <pre aria-label="API 요청 본문">{json}</pre>
+              </div>
+            </details>
           </section>
         )}
       </div>
 
-      {error && (
-        <p role="alert" className="alert">
-          {error}
-        </p>
-      )}
-
       <div className="wizard-actions">
-        <button type="button" className="btn ghost" onClick={() => setStep(step - 1)} disabled={step === 0 || busy}>
+        <button type="button" className="btn ghost" onClick={() => setStep(step - 1)} disabled={step === 0}>
           이전
         </button>
         {step < STEPS.length - 1 ? (
@@ -330,8 +447,8 @@ export function LaunchWizard({ onSubmit }: Props) {
             다음
           </button>
         ) : (
-          <button type="button" className="btn primary" onClick={launch} disabled={busy || !canEnter(3)}>
-            {busy ? '실행 중…' : '실행'}
+          <button type="button" className="btn primary" onClick={launch} disabled={!canEnter(4) || !stepDone[4]}>
+            학습 시작
           </button>
         )}
       </div>
