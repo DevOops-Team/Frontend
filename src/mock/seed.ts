@@ -1,73 +1,110 @@
-import { gpuOf, modelOf, type TaskId } from './catalog';
-import { advance, createRun, type Run } from './runs';
-import { estimate, presetHyper, recommendGpu, type PresetId } from '../lib/estimate';
-import { buildRequest, type DatasetSource } from '../lib/request';
+import { DEFAULT_FORM, DEFAULT_POOL, buildPipelineRequest, type PipelineForm } from '../lib/pipeline';
+import { advanceStore, cancelPipeline, submitPipeline, type Dataset, type Model, type Store } from './store';
 
-interface SeedSpec {
-  id: string;
-  name: string;
-  task: TaskId;
-  model: string;
-  source: DatasetSource;
-  datasetRef: string;
-  datasetTitle: string;
-  format: 'csv' | 'jsonl' | 'hf';
-  columns: Record<string, string>;
-  rows: number;
-  labels: string[];
-  preset: PresetId;
-  minutesAgo: number;
-  ticks: number;
-  failAt?: Run['failAt'];
-}
+const ago = (now: number, min: number) => new Date(now - min * 60_000).toISOString();
 
-const SPECS: SeedSpec[] = [
-  {
-    id: 'run-7f3a', name: 'bert-nsmc-sentiment', task: 'text-classification', model: 'klue/bert-base',
-    source: 'huggingface', datasetRef: 'e9t/nsmc', datasetTitle: 'NSMC 네이버 영화 리뷰', format: 'hf',
-    columns: { text: 'document', label: 'label' }, rows: 150000, labels: ['0', '1'], preset: 'balanced', minutesAgo: 190, ticks: 40,
-  },
-  {
-    id: 'run-8c21', name: 'koalpaca-cs-bot', task: 'instruction-sft', model: 'beomi/KoAlpaca-Polyglot-5.8B',
-    source: 'upload', datasetRef: 'cs_qa_2026.jsonl', datasetTitle: 'cs_qa_2026.jsonl', format: 'jsonl',
-    columns: { instruction: 'question', output: 'answer' }, rows: 3400, labels: [], preset: 'balanced', minutesAgo: 24, ticks: 8,
-  },
-  {
-    id: 'run-91d0', name: 'qwen-news-summary', task: 'summarization', model: 'Qwen/Qwen2.5-7B',
-    source: 'huggingface', datasetRef: 'daekeun-ml/naver-news-summarization-ko', datasetTitle: '네이버 뉴스 요약', format: 'hf',
-    columns: { document: 'document', summary: 'summary' }, rows: 22194, labels: [], preset: 'fast', minutesAgo: 3, ticks: 1,
-  },
-  {
-    id: 'run-a4be', name: 'vit-pcb-defects', task: 'image-classification', model: 'google/vit-base-patch16-224',
-    source: 'upload', datasetRef: 'pcb_labels.csv', datasetTitle: 'pcb_labels.csv', format: 'csv',
-    columns: { image: 'image_path', label: 'label' }, rows: 2400, labels: ['정상', '스크래치', '납땜불량'], preset: 'balanced', minutesAgo: 75, ticks: 10,
-    failAt: { stage: 0, reason: '데이터셋 라벨 컬럼(label)에 빈 값 132개가 있습니다. 빈 행을 지우거나 라벨을 채운 뒤 다시 실행하세요.' },
-  },
-  {
-    id: 'run-b552', name: 'xgboost-telecom-churn', task: 'tabular', model: 'xgboost',
-    source: 'sample', datasetRef: 'sample/telecom-churn', datasetTitle: '통신사 고객 이탈', format: 'csv',
-    columns: { target: 'churn', id: 'customer_id' }, rows: 7043, labels: ['no', 'yes'], preset: 'fast', minutesAgo: 320, ticks: 40,
-  },
+export const SEED_DATASETS = (now: number): Dataset[] => [
+  { id: 'ds-reviews', displayName: 'shopping-reviews', type: '텍스트', annotationSets: ['sentiment-v1', 'sentiment-v2'], items: 12000, region: 'kr-seoul-1', createdAt: ago(now, 60 * 24 * 9) },
+  { id: 'ds-pcb', displayName: 'pcb-defect-images', type: '이미지', annotationSets: ['defect-labels', 'defect-boxes'], items: 2400, region: 'kr-seoul-1', createdAt: ago(now, 60 * 24 * 5) },
+  { id: 'ds-churn', displayName: 'telecom-churn', type: '표 형식', annotationSets: ['default'], items: 7043, region: 'kr-seoul-1', createdAt: ago(now, 60 * 24 * 20) },
 ];
 
-// 상태가 서로 다른 목업 실행 5개: 성공 2, 학습 중 1, 막 시작 1, 데이터 검증 실패 1.
-export function seedRuns(now = Date.now()): Run[] {
-  return SPECS.map((s) => {
-    const model = modelOf(s.model)!;
-    const hyper = presetHyper(s.preset, model);
-    const gpu = recommendGpu(model, hyper.lora);
-    const request = buildRequest({
-      name: s.name, task: s.task, baseModel: s.model, source: s.source, datasetRef: s.datasetRef, format: s.format,
-      mapping: s.columns, trainPercent: 90, preset: s.preset, hyper, gpu, gpuAuto: true,
-    });
-    const run = createRun(
-      request,
+function form(over: Partial<PipelineForm>): PipelineForm {
+  return { ...DEFAULT_FORM, modelInput: over.modelName ?? (over.parentModelId ? 'team/churn-mlp' : 'team/bert-base'), datasetInput: `s3://team-data/${over.datasetId ?? 'training'}`, ...over };
+}
+
+// 시드: 성공(새 버전) · 학습 중 · 분산 학습 실패 · HP 조정 8회 성공 · 취소 · 엔드포인트 1개.
+export function seedStore(now = Date.now()): Store {
+  const churnModel: Model = {
+    id: 'mdl-churn',
+    displayName: 'churn-mlp',
+    description: '통신사 고객 이탈 예측 (PyTorch MLP)',
+    region: 'kr-seoul-1',
+    createdAt: ago(now, 60 * 24 * 14),
+    versions: [
+      { versionId: 1, createdAt: ago(now, 60 * 24 * 14), artifactUri: 'ds://devoops-demo/churn/run-0412/model/', pipelineId: 'pl-churn0', imageUri: 'registry.devoops.io/prediction/pytorch-cpu.2-4:latest' },
+    ],
+  };
+  let store: Store = {
+    datasets: SEED_DATASETS(now),
+    pipelines: [],
+    hptJobs: [],
+    models: [churnModel],
+    endpoints: [
       {
-        datasetTitle: s.datasetTitle, rows: s.rows, labels: s.labels, gpuLabel: `${gpuOf(gpu.gpuId).label} × ${gpu.count}`,
-        estimate: estimate({ model, gpu, trainRows: Math.round(s.rows * 0.9), hyper }),
+        id: 'ep-churn',
+        displayName: 'churn-online',
+        region: 'kr-seoul-1',
+        createdAt: ago(now, 60 * 24 * 13),
+        deployments: [{ modelId: 'mdl-churn', modelName: 'churn-mlp', versionId: 1, machineType: 'standard-4', minReplicas: 1, maxReplicas: 3, traffic: 100 }],
       },
-      { id: s.id, createdAt: new Date(now - s.minutesAgo * 60_000).toISOString(), failAt: s.failAt },
-    );
-    return advance(run, s.ticks);
-  });
+    ],
+  };
+  const models = store.models;
+
+  const specs: { id: string; minutesAgo: number; ticks: number; form: PipelineForm; failAt?: { tick: number; message: string } }[] = [
+    {
+      id: 'pl-cancel',
+      minutesAgo: 60 * 26,
+      ticks: 3,
+      form: form({
+        modelName: 'pcb-vit', containerKind: 'custom', imageUri: 'registry.devoops.io/vision/vit-trainer:0.3', args: ['--epochs=30'],
+        outputDir: 'ds://devoops-demo/pcb/vit', datasetId: 'ds-pcb', annotationSet: 'defect-labels', predictionKind: 'none',
+        pools: [{ ...DEFAULT_POOL, acceleratorType: 'NVIDIA_L4' }],
+      }),
+    },
+    {
+      id: 'pl-churn2',
+      minutesAgo: 60 * 6,
+      ticks: 20,
+      form: form({
+        modelMode: 'version', parentModelId: 'mdl-churn', description: 'tenure 특성 추가', framework: 'pytorch', frameworkVersion: '2.4',
+        packageUri: 'ds://devoops-demo/churn/trainer-0.4.tar.gz', outputDir: 'ds://devoops-demo/churn/run-1031', args: ['--hidden-size=256', '--epochs=10'],
+        datasetId: 'ds-churn', annotationSet: 'default', pools: [{ ...DEFAULT_POOL, machineType: 'standard-4', acceleratorType: 'NVIDIA_T4', acceleratorCount: 1 }],
+        predFramework: 'pytorch', predVersion: '2.4',
+      }),
+    },
+    {
+      id: 'pl-revhpt',
+      minutesAgo: 60 * 3,
+      ticks: 30,
+      form: form({
+        modelName: 'reviews-bert', description: '리뷰 감성 분류 (HP 조정 최적 시도)', datasetId: 'ds-reviews', annotationSet: 'sentiment-v2',
+        outputDir: 'ds://devoops-demo/reviews/hpt-01', args: ['--epochs=3'], hptEnabled: true,
+        hptParams: [
+          { id: 'learning_rate', type: 'DOUBLE', min: '0.00001', max: '0.001', values: '', scale: 'LOG' },
+          { id: 'batch_size', type: 'DISCRETE', min: '', max: '', values: '16, 32, 64', scale: 'LINEAR' },
+          { id: 'dropout', type: 'DOUBLE', min: '0.0', max: '0.5', values: '', scale: 'LINEAR' },
+        ],
+        metricId: 'accuracy', goal: 'MAXIMIZE', maxTrials: 8, parallelTrials: 2,
+      }),
+    },
+    {
+      id: 'pl-pcbdist',
+      minutesAgo: 75,
+      ticks: 6,
+      failAt: { tick: 5, message: "작업자 풀 1의 복제본 workerpool1-1이 종료 코드 1로 끝났습니다: RuntimeError: CUDA out of memory (15.2GiB / 16GiB 사용). 배치 크기를 줄이거나 메모리가 더 큰 가속기를 고르세요." },
+      form: form({
+        modelName: 'pcb-resnet', datasetId: 'ds-pcb', annotationSet: 'defect-labels', outputDir: 'ds://devoops-demo/pcb/resnet-dist',
+        args: ['--epochs=20', '--batch-size=256'], spot: true,
+        pools: [DEFAULT_POOL, { ...DEFAULT_POOL, replicaCount: 2 }],
+      }),
+    },
+    {
+      id: 'pl-reviews',
+      minutesAgo: 4,
+      ticks: 5,
+      form: form({ strategy: 'fsdp', modelName: 'reviews-bert-large', datasetId: 'ds-reviews', annotationSet: 'sentiment-v2', outputDir: 'ds://devoops-demo/reviews/large-01', pools: [{ ...DEFAULT_POOL, acceleratorType: 'NVIDIA_L4' }, { ...DEFAULT_POOL, acceleratorType: 'NVIDIA_L4', replicaCount: 3 }] }),
+    },
+  ];
+
+  // 오래된 것부터 올리고 각자 tick 수만큼 진행한다(다른 파이프라인은 건드리지 않도록 따로 진행).
+  for (const s of specs) {
+    const res = submitPipeline(store, buildPipelineRequest(s.form, models), { id: s.id, createdAt: ago(now, s.minutesAgo), failAt: s.failAt });
+    const others = res.store.pipelines.filter((p) => p.id !== s.id);
+    const solo = advanceStore({ ...res.store, pipelines: res.store.pipelines.filter((p) => p.id === s.id) }, s.ticks, ago(now, Math.max(0, s.minutesAgo - 20)));
+    store = { ...solo, pipelines: [...solo.pipelines, ...others] };
+    if (s.id === 'pl-cancel') store = cancelPipeline(store, 'pl-cancel');
+  }
+  return store;
 }

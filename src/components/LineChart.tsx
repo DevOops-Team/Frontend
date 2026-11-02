@@ -1,5 +1,5 @@
 import { useId } from 'react';
-import type { Point } from '../mock/runs';
+import type { Point } from '../mock/store';
 
 const W = 640;
 const H = 160;
