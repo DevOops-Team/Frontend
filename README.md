@@ -1,3 +1,21 @@
+# DevOops · Material 디자인
+
+`design/google`은 5173 가이드형 목업을 Material 3에서 영감받은 ML 워크스페이스로 재구성한 디자인 브랜치입니다. 고정 사이드 내비게이션, 파란색 액센트, 둥근 카드·단계 컨트롤과 정돈된 실행 표를 사용합니다.
+
+상단 **화이트 / 다크** 버튼으로 화면 모드를 전환합니다. 선택은 이 브라우저의 localStorage에 저장되며, 처음에는 OS 설정을 따릅니다. 테마 전환 중에도 작성한 학습 입력은 유지됩니다.
+
+모델 → 데이터 → DDP/FSDP·GPU → 최종 확인 흐름과 GPU 모달, 고정 `train.py` 목업은 그대로 유지합니다. 실제 GPU 자원이나 외부 API를 호출하지 않습니다.
+
+```sh
+npm run dev -- --host 127.0.0.1 --port 5183
+npm test
+npm run typecheck
+npm run lint
+npm run build
+```
+
+---
+
 # DDP · FSDP 가이드형 학습 목업
 
 현재 화면은 PyTorch의 DDP 또는 FSDP만 선택할 수 있는 클릭 가능한 목업입니다. 백엔드를 호출하지 않으며 실제 GPU 자원을 만들지 않습니다.
