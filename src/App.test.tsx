@@ -7,6 +7,7 @@ describe('guided distributed mock', () => {
   it('explains the two supported choices and preserves FSDP in the submitted run', async () => {
     const user = userEvent.setup();
     render(<App />);
+    expect(screen.queryByRole('button', { name: '학습 생성' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '새 학습 만들기' }));
     await user.click(screen.getByRole('button', { name: '다음: 데이터 입력' }));
     expect(screen.getByRole('alert')).toHaveTextContent('학습 모델');
