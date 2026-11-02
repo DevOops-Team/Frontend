@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { JobList } from './JobList';
@@ -21,8 +21,6 @@ const running: Job = {
     updatedAt: 1730000000000,
   },
 };
-
-afterEach(() => vi.unstubAllGlobals());
 
 describe('JobList', () => {
   it('shows the cluster MultiKueue picked and the queue phase', () => {
@@ -61,19 +59,13 @@ describe('JobList', () => {
     expect(screen.getByText('제출된 작업이 없습니다')).toBeInTheDocument();
   });
 
-  it('opens the submitted files of a job', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) =>
-        url.endsWith('/files')
-          ? new Response(JSON.stringify([{ kind: 'code', name: 'job.yaml', size: 12 }]))
-          : new Response('kind: JobSet', { headers: { 'X-Truncated': 'false', 'X-Total-Size': '12' } }),
-      ),
-    );
-    render(<JobList jobs={[running]} />);
+  it('opens a job when its row is clicked', async () => {
+    const onSelect = vi.fn();
+    render(<JobList jobs={[running]} onSelect={onSelect} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'abc123 파일 보기' }));
+    await userEvent.click(screen.getByText('devoops-a'));
+    await userEvent.click(screen.getByRole('button', { name: 'abc123 상세 보기' }));
 
-    expect(await screen.findByText('kind: JobSet')).toBeInTheDocument();
+    expect(onSelect.mock.calls).toEqual([['abc123'], ['abc123']]);
   });
 });

@@ -1,4 +1,4 @@
-// 백엔드 API (Backend 저장소 internal/api)와 같은 모양.
+// 백엔드 API (Backend 저장소 internal/model · api/openapi.yaml)와 같은 모양.
 export type Phase = 'Pending' | 'Admitted' | 'Running' | 'Succeeded' | 'Failed';
 
 export interface Progress {
@@ -36,6 +36,22 @@ export interface FileContent {
   totalSize: number;
 }
 
+// 작업이 GPU까지 가는 동안 거친 단계 하나 (DynamoDB devoops-job-events).
+// k3s 단계는 백엔드가, EKS 단계는 각 워커의 job-watcher가 쓴다.
+export interface JobEvent {
+  jobId: string;
+  key: string;
+  time: string;
+  lastTime: string;
+  cluster: string; // "k3s" 또는 EKS 워커 이름
+  source: string; // backend, kueue-admission, multikueue, jobset, default-scheduler, karpenter, kubelet ...
+  reason: string;
+  message: string;
+  type: string; // Normal | Warning
+  object: string;
+  count: number;
+}
+
 export interface JobInput {
   job: File;
   train: File;
@@ -62,6 +78,10 @@ export async function createJob(input: JobInput): Promise<{ id: string; name: st
 
 export async function listJobs(): Promise<Job[]> {
   return parse(await fetch(`${API_BASE}/api/jobs`));
+}
+
+export async function listEvents(jobId: string): Promise<JobEvent[]> {
+  return parse(await fetch(`${API_BASE}/api/jobs/${encodeURIComponent(jobId)}/events`));
 }
 
 export async function listFiles(jobId: string): Promise<JobFile[]> {

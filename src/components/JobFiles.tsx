@@ -11,7 +11,9 @@ function formatSize(bytes: number) {
 export function JobFiles({ jobId }: { jobId: string }) {
   const [files, setFiles] = useState<JobFile[] | null>(null);
   const [selected, setSelected] = useState<JobFile | null>(null);
-  const [content, setContent] = useState<FileContent | null>(null);
+  // 내용은 어느 파일 것인지와 함께 둔다. 다른 파일을 고르면 새 내용이 올 때까지 '불러오는 중'.
+  const [loaded, setLoaded] = useState<{ file: JobFile; content: FileContent } | null>(null);
+  const content = loaded && loaded.file === selected ? loaded.content : null;
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -26,9 +28,8 @@ export function JobFiles({ jobId }: { jobId: string }) {
   useEffect(() => {
     if (!selected) return;
     let current = true;
-    setContent(null);
     getFile(jobId, selected.kind, selected.name)
-      .then((c) => current && setContent(c))
+      .then((c) => current && setLoaded({ file: selected, content: c }))
       .catch((err) => current && setError(String(err.message ?? err)));
     return () => {
       current = false;
