@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_FORM, DEFAULT_POOL, buildPipelineRequest, validateForm } from './pipeline';
-import { seedStore } from '../mock/seed';
-import { jobSpec } from '../mock/store';
+import { seedStore } from '../seed';
+import { jobSpec } from '../api';
 import type { PipelineForm } from './pipeline';
 
 describe('supported distributed training', () => {

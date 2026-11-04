@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { isTerminal, jobSpec, TICK_SECONDS, type Pipeline } from '../mock/store';
+import { StateBadge } from '@/shared/ui/StateBadge';
+import { isTerminal, jobSpec, TICK_SECONDS } from '../api';
 import { runProgress } from '../lib/progress';
-import { StateBadge } from './ui';
+import type { Pipeline } from '../types';
 
 export function RunOverview({ pipeline: p, onBack, onStop }: { pipeline: Pipeline; onBack: () => void; onStop: () => void }) {
   const [eventPage, setEventPage] = useState(0);

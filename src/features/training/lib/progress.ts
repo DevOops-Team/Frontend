@@ -1,4 +1,4 @@
-import type { Pipeline } from '../mock/store';
+import type { Pipeline } from '../types';
 
 const LABELS = ['요청 접수', 'GPU 준비', '모델 학습', '결과 저장'];
 export function runProgress(p: Pipeline) {

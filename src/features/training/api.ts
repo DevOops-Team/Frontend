@@ -1,6 +1,6 @@
-import { bestTrial, planTrial, rand, type Trial } from '../lib/hpt';
-import { modelDirectory, type CustomJobSpec, type PipelineRequest, type StudySpec } from '../lib/pipeline';
-import { resourceName } from './catalog';
+import { bestTrial, planTrial, rand, type Trial } from './lib/hpt';
+import { modelDirectory, type CustomJobSpec, type PipelineRequest } from './lib/pipeline';
+import type { Deployment, Model, ModelVersion, Pipeline, PipelineState, Point, Store, TimelineEvent } from './types';
 
 // 목업 저장소와 시뮬레이션. 화면이 TICK_MS마다 tickStore()를 부르면 파이프라인·조정 작업이 진행되고,
 // 성공한 파이프라인은 <출력 디렉터리>/model/의 아티팩트로 모델 레지스트리에 모델(또는 새 버전)을 올린다.
@@ -10,110 +10,6 @@ export const TICK_SECONDS = 30; // tick 하나가 나타내는 목업 경과 시
 const TRAIN_TICKS = 8;
 const TRIAL_TICKS = 2;
 const LOG_LIMIT = 200;
-
-export type PipelineState = 'PENDING' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED';
-
-export interface Point {
-  step: number;
-  value: number;
-}
-
-export interface Dataset {
-  id: string;
-  displayName: string;
-  type: '표 형식' | '이미지' | '텍스트';
-  annotationSets: string[];
-  items: number;
-  region: string;
-  createdAt: string;
-}
-
-export interface TimelineEvent {
-  t: number; // 생성 후 경과 초
-  message: string;
-  level: 'info' | 'warning' | 'error';
-}
-
-export interface Pipeline {
-  id: string;
-  displayName: string;
-  state: PipelineState;
-  region: string;
-  request: PipelineRequest;
-  createdAt: string;
-  tick: number;
-  trainTicks: number;
-  failAt?: { tick: number; message: string };
-  customJobId: string;
-  hptJobId?: string;
-  modelId?: string;
-  modelVersion?: number;
-  error?: string;
-  events: TimelineEvent[];
-  cpu: Point[];
-  gpu: Point[];
-  logs: string[][]; // 작업자 풀별
-  seed: number;
-}
-
-export interface HptJob {
-  id: string;
-  displayName: string;
-  pipelineId: string;
-  state: PipelineState;
-  region: string;
-  study: StudySpec;
-  maxTrials: number;
-  parallel: number;
-  trials: Trial[];
-  createdAt: string;
-  seed: number;
-}
-
-export interface ModelVersion {
-  trainingInputs?: CustomJobSpec['runner'];
-  versionId: number;
-  createdAt: string;
-  artifactUri: string;
-  pipelineId: string;
-  imageUri: string;
-  description?: string;
-}
-
-export interface Model {
-  id: string;
-  displayName: string;
-  description: string;
-  region: string;
-  createdAt: string;
-  versions: ModelVersion[];
-}
-
-export interface Deployment {
-  modelId: string;
-  modelName: string;
-  versionId: number;
-  machineType: string;
-  minReplicas: number;
-  maxReplicas: number;
-  traffic: number;
-}
-
-export interface Endpoint {
-  id: string;
-  displayName: string;
-  region: string;
-  createdAt: string;
-  deployments: Deployment[];
-}
-
-export interface Store {
-  datasets: Dataset[];
-  pipelines: Pipeline[];
-  hptJobs: HptJob[];
-  models: Model[];
-  endpoints: Endpoint[];
-}
 
 export function isTerminal(s: PipelineState): boolean {
   return s === 'SUCCEEDED' || s === 'FAILED' || s === 'CANCELLED';
@@ -356,8 +252,4 @@ export function deployModel(store: Store, d: DeployInput, now = new Date().toISO
   }
   const id = newId('ep');
   return { store: { ...store, endpoints: [{ id, displayName: d.endpointName, region: model.region, createdAt: now, deployments: [dep] }, ...store.endpoints] }, endpointId: id };
-}
-
-export function modelResource(m: Model): string {
-  return resourceName(m.region, 'models', m.id);
 }

@@ -1,4 +1,4 @@
-import { DISK_TYPES, SPOT_DISCOUNT, acceleratorOf, machineOf } from '../mock/catalog';
+import { DISK_TYPES, SPOT_DISCOUNT, acceleratorOf, machineOf } from '../catalog';
 
 export interface WorkerPoolForm {
   machineType: string;

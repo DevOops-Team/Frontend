@@ -1,12 +1,19 @@
 import { useEffect, useState } from 'react';
-import { useTheme } from './useTheme';
-import { Icon } from './components/Icon';
-import { RunOverview } from './components/RunOverview';
-import { CreatePipeline } from './components/CreatePipeline';
-import { StateBadge } from './components/ui';
-import { seedStore } from './mock/seed';
-import { cancelPipeline, jobSpec, submitPipeline, tickStore, TICK_MS, type Store } from './mock/store';
-import type { PipelineRequest } from './lib/pipeline';
+import { useTheme } from '@/features/theme';
+import {
+  CreatePipeline,
+  RunOverview,
+  TICK_MS,
+  cancelPipeline,
+  jobSpec,
+  seedStore,
+  submitPipeline,
+  tickStore,
+  type PipelineRequest,
+  type Store,
+} from '@/features/training';
+import { Icon } from '@/shared/ui/Icon';
+import { StateBadge } from '@/shared/ui/StateBadge';
 
 export function App({ initialStore }: { initialStore?: Store }) {
   const [store, setStore] = useState(() => initialStore ?? seedStore());

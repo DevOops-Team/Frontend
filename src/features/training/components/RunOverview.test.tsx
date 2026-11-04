@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { seedStore } from '../mock/seed';
+import { seedStore } from '../seed';
 import { RunOverview } from './RunOverview';
 
 describe('execution monitor', () => {

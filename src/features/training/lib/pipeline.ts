@@ -1,4 +1,4 @@
-import { PROJECT, TASK_DEFINITION, predictionImage, resourceName, trainingImage } from '../mock/catalog';
+import { PROJECT, TASK_DEFINITION, predictionImage, resourceName, trainingImage } from '../catalog';
 import { totalGpus, type WorkerPoolForm } from './pricing';
 
 // "새 모델 학습" 폼 값 → 검증 → REST 요청 본문(trainingPipelines.create와 같은 구조).

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { ACCELERATORS } from '../mock/catalog';
-import type { Store } from '../mock/store';
+import { ACCELERATORS } from '../catalog';
+import type { Store } from '../types';
 import { DEFAULT_FORM, DEFAULT_POOL, buildPipelineRequest, isValid, validateForm, type PipelineForm, type PipelineRequest } from '../lib/pipeline';
 import { totalGpus, totalHourly } from '../lib/pricing';
-import { formatUsd } from '../lib/format';
+import { formatUsd } from '@/shared/lib/format';
 
 export function CreatePipeline({ store, onSubmit, onCancel }: { store: Store; onSubmit: (r: PipelineRequest) => void; onCancel: () => void }) {
   const [f, setF] = useState<PipelineForm>({ ...DEFAULT_FORM, pools: [{ ...DEFAULT_POOL }, { ...DEFAULT_POOL }] });

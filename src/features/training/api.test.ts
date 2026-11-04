@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_FORM, buildPipelineRequest } from '../lib/pipeline';
+import { DEFAULT_FORM, buildPipelineRequest } from './lib/pipeline';
 import { seedStore } from './seed';
-import { advanceStore, cancelPipeline, deployModel, submitPipeline, tickStore } from './store';
+import { advanceStore, cancelPipeline, deployModel, submitPipeline, tickStore } from './api';
 
 const NOW = Date.parse('2026-11-02T00:00:00Z');
 

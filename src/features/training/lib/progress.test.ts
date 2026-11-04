@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { seedStore } from '../mock/seed';
+import { seedStore } from '../seed';
 import { runProgress } from './progress';
 
 describe('execution progress', () => {

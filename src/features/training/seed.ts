@@ -1,5 +1,6 @@
-import { DEFAULT_FORM, DEFAULT_POOL, buildPipelineRequest, type PipelineForm } from '../lib/pipeline';
-import { advanceStore, cancelPipeline, submitPipeline, type Dataset, type Model, type Store } from './store';
+import { DEFAULT_FORM, DEFAULT_POOL, buildPipelineRequest, type PipelineForm } from './lib/pipeline';
+import { advanceStore, cancelPipeline, submitPipeline } from './api';
+import type { Dataset, Model, Store } from './types';
 
 const ago = (now: number, min: number) => new Date(now - min * 60_000).toISOString();
 
