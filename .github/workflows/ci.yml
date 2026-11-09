@@ -72,8 +72,5 @@ jobs:
           push: ${{ env.PUSH == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # 백엔드 주소는 번들에 들어간다. 배포 주소가 정해지면 레포 변수 VITE_API_BASE에 넣는다.
-          build-args: |
-            VITE_API_BASE=${{ vars.VITE_API_BASE || 'http://localhost:8080' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
