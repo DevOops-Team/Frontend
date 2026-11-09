@@ -1,59 +1,62 @@
-import { describe, expect, it } from 'vitest';
-import { DEFAULT_FORM, buildPipelineRequest } from './lib/pipeline';
-import { seedStore } from './seed';
-import { advanceStore, cancelPipeline, deployModel, submitPipeline, tickStore } from './api';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { makeJob, stubApi } from '@/test-api';
+import { ApiError, buildJobRequest, createJob, getDataset, getJob, listJobs, listModels, modelFile } from './api';
 
-const NOW = Date.parse('2026-11-02T00:00:00Z');
+afterEach(() => { vi.unstubAllGlobals(); });
 
-describe('mock store', () => {
-  const seed = seedStore(NOW);
-
-  it('seeds pipelines in every state, an HP tuning job with 8 trials and a model with two versions', () => {
-    expect(seed.pipelines.map((p) => [p.id, p.state])).toEqual([
-      ['pl-reviews', 'RUNNING'],
-      ['pl-pcbdist', 'FAILED'],
-      ['pl-revhpt', 'SUCCEEDED'],
-      ['pl-churn2', 'SUCCEEDED'],
-      ['pl-cancel', 'CANCELLED'],
-    ]);
-    expect(seed.pipelines.find((p) => p.id === 'pl-pcbdist')!.error).toMatch(/CUDA out of memory/);
-    const hpt = seed.hptJobs.find((j) => j.id === 'hpt-revhpt')!;
-    expect(hpt.state).toBe('SUCCEEDED');
-    expect(hpt.trials).toHaveLength(8);
-    expect(seed.models.find((m) => m.id === 'mdl-churn')!.versions.map((v) => v.versionId)).toEqual([1, 2]);
-    const reviews = seed.models.find((m) => m.displayName === 'reviews-bert')!;
-    expect(reviews.versions[0].artifactUri).toMatch(/^ds:\/\/devoops-demo\/reviews\/hpt-01\/\d+\/model\/$/);
-    expect(seed.models.some((m) => m.displayName === 'pcb-vit')).toBe(false);
+describe('backend client', () => {
+  it('unwraps item lists', async () => {
+    stubApi({ jobs: [makeJob()] });
+    expect((await listJobs())[0].id).toBe('3f9a1c2e');
+    expect((await listModels())[0].name).toBe('gpt2');
   });
 
-  it('runs a submitted pipeline to success and uploads a model from <outputDir>/model/', () => {
-    const form = { ...DEFAULT_FORM, modelName: 'my-model', outputDir: 'ds://b/out' };
-    const { store, id } = submitPipeline(seed, buildPipelineRequest(form), { id: 'pl-test' });
-    expect(store.pipelines[0]).toMatchObject({ id, state: 'PENDING' });
-    expect(tickStore(store).pipelines[0].state).toBe('RUNNING');
-    const done = advanceStore(store, 12);
-    const p = done.pipelines[0];
-    expect(p.state).toBe('SUCCEEDED');
-    expect(p.cpu.length).toBeGreaterThan(3);
-    expect(p.gpu.length).toBeGreaterThan(3);
-    expect(p.logs[0].some((l) => l.includes('loss='))).toBe(true);
-    const m = done.models.find((x) => x.id === p.modelId)!;
-    expect(m).toMatchObject({ displayName: 'my-model', versions: [{ versionId: 1, artifactUri: 'ds://b/out/model/', pipelineId: 'pl-test' }] });
+  it('encodes path segments', async () => {
+    const api = stubApi();
+    await getDataset('ds a/b');
+    expect(api.urls()).toContain('GET /api/datasets/ds%20a%2Fb');
   });
 
-  it('cancels a running pipeline', () => {
-    const c = cancelPipeline(seed, 'pl-reviews');
-    expect(c.pipelines[0].state).toBe('CANCELLED');
-    expect(tickStore(c).pipelines[0]).toBe(c.pipelines[0]);
+  it('posts JSON and returns the created job', async () => {
+    const api = stubApi();
+    const created = await createJob({ model: 'gpt2', strategy: 'fsdp', gpus: 2, dataset: { id: 'ds-x', version: 1 }, hyperparameters: {} });
+    expect(created.jobsetName).toBe('job-3f9a1c2e-g0001');
+    expect(api.fetch.mock.calls[0][1].headers).toEqual({ 'Content-Type': 'application/json' });
   });
 
-  it('deploys a model version to a new or existing endpoint', () => {
-    const a = deployModel(seed, { modelId: 'mdl-churn', versionId: 2, endpointId: '', endpointName: 'churn-v2', machineType: 'standard-4', minReplicas: 1, maxReplicas: 2 });
-    expect(a.store.endpoints[0]).toMatchObject({ id: a.endpointId, displayName: 'churn-v2', deployments: [{ versionId: 2, traffic: 100 }] });
-    const b = deployModel(seed, { modelId: 'mdl-churn', versionId: 2, endpointId: 'ep-churn', endpointName: '', machineType: 'standard-4', minReplicas: 1, maxReplicas: 2 });
-    expect(b.store.endpoints.find((e) => e.id === 'ep-churn')!.deployments.map((d) => [d.versionId, d.traffic])).toEqual([
-      [1, 0],
-      [2, 100],
-    ]);
+  it('turns error bodies into ApiError with field reasons', async () => {
+    stubApi({ fail: { '/api/jobs/x': { status: 400, body: { error: 'bad', code: 'VALIDATION', fields: [{ field: 'gpus', message: '2~2' }] } } } });
+    const err = await getJob('x').catch((e: unknown) => e) as ApiError;
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.status).toBe(400);
+    expect(err.code).toBe('VALIDATION');
+    expect(err.message).toContain('gpus: 2~2');
+  });
+
+  it('reports a non-JSON failure such as the dev proxy with no backend', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('Bad Gateway', { status: 502 })));
+    await expect(getJob('x')).rejects.toThrow('502');
+  });
+
+  it('reads previews with their truncation headers', async () => {
+    stubApi();
+    const p = await modelFile('gpt2', 'config.json');
+    expect(p).toEqual({ text: 'preview of config.json', truncated: true, totalSize: 70000 });
+  });
+});
+
+describe('buildJobRequest', () => {
+  const form = { name: '', model: 'gpt2', strategy: 'fsdp', gpus: 2, datasetId: 'ds-x', datasetVersion: 1 };
+
+  it('omits an empty name and leaves hyperparameters to the backend defaults', () => {
+    expect(buildJobRequest(form)).toEqual({ model: 'gpt2', strategy: 'fsdp', gpus: 2, dataset: { id: 'ds-x', version: 1 }, hyperparameters: {} });
+  });
+
+  it('passes only the changed hyperparameters', () => {
+    expect(buildJobRequest(form, { epochs: 3 }).hyperparameters).toEqual({ epochs: 3 });
+  });
+
+  it('trims a typed name', () => {
+    expect(buildJobRequest({ ...form, name: ' my-run ' }).name).toBe('my-run');
   });
 });

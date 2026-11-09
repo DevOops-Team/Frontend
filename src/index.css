@@ -2,14 +2,14 @@
   color-scheme: light;
   --bg:#fcf9f8; --surface:#fff; --surface-alt:#f7f1ef; --surface-hover:#f1e6e2; --text:#1f1f1f; --muted:#5f6368;
   --border:#e8dedb; --border-strong:#9aa0a6; --accent:#b43b38; --accent-strong:#942e2c; --accent-soft:#f8e3df; --on-accent:#fff;
-  --ok:#146c2e; --ok-soft:#dcf2df; --warn:#7c5800; --warn-soft:#fff0c2; --bad:#b3261e; --bad-soft:#fce8e6;
+  --ok:#146c2e; --ok-soft:#dcf2df; --warn:#7c5800; --warn-soft:#fff0c2; --bad:#b3261e; --bad-soft:#fce8e6; --info:#1a5fb4; --info-soft:#dbe8fb; --on-info:#fff;
   --overlay:rgba(16,28,44,.42); --shadow:0 2px 7px #142b4610; --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
   font-family:'Google Sans','Helvetica Neue','Apple SD Gothic Neo',Arial,sans-serif; font-synthesis:none; font-weight:400; line-height:1.55; background:var(--bg); color:var(--text);
 }
 :root[data-theme='dark'] {
   color-scheme:dark; --bg:#191514; --surface:#221c1a; --surface-alt:#2b2321; --surface-hover:#362a27; --text:#f1e6e2; --muted:#cbb9b3;
   --border:#4b3b36; --border-strong:#7f8a99; --accent:#f5aaa0; --accent-strong:#ffc1b8; --accent-soft:#542c29; --on-accent:#4c1512;
-  --ok:#a8dab5; --ok-soft:#1f3f2b; --warn:#f8dc8a; --warn-soft:#483b1f; --bad:#ffb4ab; --bad-soft:#572e2b; --overlay:rgba(0,0,0,.67); --shadow:0 2px 8px #0002;
+  --ok:#a8dab5; --ok-soft:#1f3f2b; --warn:#f8dc8a; --warn-soft:#483b1f; --bad:#ffb4ab; --bad-soft:#572e2b; --info:#a8c8fa; --info-soft:#1f3350; --on-info:#0e2a4d; --overlay:rgba(0,0,0,.67); --shadow:0 2px 8px #0002;
 }
 * { box-sizing:border-box; } body { margin:0; min-width:320px; background:var(--bg); } button,input,select { font:inherit; } button { cursor:pointer; } button:disabled { cursor:not-allowed; opacity:.48; } button,select,input { -webkit-tap-highlight-color:transparent; } a { color:var(--accent); } button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visible { outline:3px solid var(--accent); outline-offset:3px; }
 h1,h2,h3,p { margin-top:0; } h1 { font-size:34px; line-height:1.26; font-weight:500; letter-spacing:-.035em; margin-bottom:12px; } h2 { font-size:21px; font-weight:500; letter-spacing:-.015em; margin-bottom:10px; } h3 { font-size:18px; font-weight:500; } .muted { color:var(--muted); }.small { font-size:15px; }.mono,code { font-family:var(--mono); }.link { border:0; background:none; padding:0; color:var(--accent); font-size:inherit; text-align:left; }.link:hover { text-decoration:underline; }.dot { width:6px; height:6px; border-radius:50%; background:currentColor; display:inline-block; flex:none; }
@@ -182,3 +182,70 @@ body { overflow:hidden; }
 @media(max-width:1050px) { .run-heading h1 { font-size:23px; }.run-stages li:not(:last-child)::after { display:none; }.run-progress-caption { gap:8px; }.run-detail-grid { grid-template-columns:1fr 1fr; gap:12px; }.run-inputs dl>div:not(.run-compute) { grid-template-columns:1fr; gap:2px; }.run-compute { padding-top:8px; }.run-card-heading .small { display:none; } }
 @media(prefers-reduced-motion:reduce) { .run-progress-track>span { transition:none; } }
 .run-config { font-size:14px; color:var(--muted); background:var(--surface-alt); padding:7px 12px; border-radius:8px; white-space:nowrap; }
+
+/* 실제 연동: S3 파일 목록 · 미리보기, 학습 지표 */
+.asset-box { margin-top:24px; border:1px solid var(--border); border-radius:12px; padding:16px; display:grid; gap:12px; min-width:0; }
+.asset-head { display:grid; gap:4px; min-width:0; }
+.asset-uri { font-family:var(--mono); font-size:13px; color:var(--muted); overflow-wrap:anywhere; }
+.file-list { list-style:none; margin:0; padding:0; display:grid; gap:8px; max-height:280px; overflow:auto; }
+.file-row { display:flex; align-items:center; gap:12px; min-width:0; }
+.file-name { flex:1; min-width:0; font-family:var(--mono); font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.file-row .link { white-space:nowrap; }
+.file-preview { margin:8px 0 4px; padding:12px; max-height:200px; overflow:auto; border-radius:8px; background:var(--surface-alt); color:var(--text); font-family:var(--mono); font-size:13px; white-space:pre-wrap; overflow-wrap:anywhere; }
+.run-metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:16px; margin:20px 0 0; }
+.run-metrics>div { display:grid; gap:4px; min-width:0; }
+.run-metrics dt { color:var(--muted); font-size:14px; }
+.run-metrics dd { margin:0; font-size:16px; font-weight:500; overflow-wrap:anywhere; }
+.run-files-heading { margin-top:24px; }
+a.nav-item { text-decoration:none; color:inherit; }
+/* 지표 줄이 들어가도록 진행 카드 높이를 내용에 맞춘다. 좁은 화면에서는 페이지가 스크롤된다. */
+.page-detail { overflow:auto; }
+.run-overview { grid-template-rows:auto auto minmax(420px,1fr); height:auto; min-height:100%; }
+/* 작업 파일 미리보기 모달 */
+.file-modal { width:min(900px,calc(100vw - 32px)); max-width:none; max-height:calc(100vh - 48px); display:flex; flex-direction:column; gap:12px; overflow:hidden; }
+.file-modal-title { min-width:0; }
+.file-modal-title h2 { margin:0; font-family:var(--mono); font-size:18px; overflow-wrap:anywhere; }
+.file-modal .file-preview { flex:1; min-height:0; max-height:none; margin:0; }
+/* 실행 상세의 학습 데이터 */
+.asset-title { margin:0; font-size:16px; font-weight:600; }
+/* 실행 기록 시각: HH:MM:SS가 한 줄에 들어가는 폭 */
+.run-timeline li { grid-template-columns:64px 10px minmax(0,1fr); }
+.run-timeline time { white-space:nowrap; font-variant-numeric:tabular-nums; }
+/* 데이터 카드가 있어도 행이 내용 높이를 따르고, 아래 카드는 최소 높이를 유지한다. */
+.run-overview { grid-template-rows:none; grid-auto-rows:auto; }
+.run-detail-grid { min-height:420px; }
+.run-dataset { padding:16px 22px; }
+.run-dataset .asset-box { margin-top:10px; padding:12px 14px; gap:8px; }
+/* 단계 색: 완료 초록, 진행 중 파랑, 실패 빨강, 대기 회색 */
+.run-stages li[data-state='done'] .run-stage-mark { background:var(--ok-soft); border-color:var(--ok-soft); color:var(--ok); }
+.run-stages li[data-state='done']::after { background:var(--ok); }
+.run-stages li[data-state='active'] { color:var(--info); }
+.run-stages li[data-state='active'] .run-stage-mark { background:var(--info); border-color:var(--info); color:var(--on-info); box-shadow:0 0 0 4px var(--info-soft); }
+.run-stages li[data-state='error'] .run-stage-mark { background:var(--bad); border-color:var(--bad); color:var(--surface); box-shadow:0 0 0 4px var(--bad-soft); }
+.run-progress[data-state='PENDING'] .run-progress-track>span,.run-progress[data-state='RUNNING'] .run-progress-track>span { background:var(--info); }
+.run-progress[data-state='PENDING'] .progress-percent>strong,.run-progress[data-state='RUNNING'] .progress-percent>strong { color:var(--info); }
+.run-progress[data-state='FAILED'] .progress-percent>strong { color:var(--bad); }
+.badge[data-state='RUNNING'] { background:var(--info-soft); color:var(--info); }
+.history-live[data-live='true']::before { background:var(--info); }
+/* 실행 기록: 시간순으로 내려가며 읽는 스크롤 목록. 메시지는 자르지 않는다. */
+.run-timeline { max-height:520px; overflow-y:auto; padding-right:8px; }
+.run-timeline:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.run-timeline li { flex:none; }
+.run-timeline p { display:block; -webkit-line-clamp:unset; overflow:visible; }
+.run-timeline li:not(:last-child) .timeline-point::after { display:none; }
+.run-timeline li:not(:last-child)::before { content:''; position:absolute; left:76px; top:13px; bottom:-9px; width:1px; background:var(--border); }
+.run-stages li[data-state='done']:not(:last-child)::after { height:2px; top:17px; opacity:.55; }
+/* 상세 설정: 펼쳤을 때 잘리지 않도록 단계 본문은 스크롤한다. */
+.wizard-body { overflow-y:auto; }
+.advanced-settings { margin-top:12px; border:1px solid var(--border); border-radius:12px; }
+.advanced-toggle { display:flex; align-items:center; gap:8px; width:100%; padding:12px 16px; border:0; border-radius:12px; background:none; color:var(--text); font:inherit; font-size:15px; font-weight:500; text-align:left; cursor:pointer; }
+.advanced-toggle:hover { background:var(--surface-hover); }
+.advanced-toggle:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.advanced-body { padding:4px 16px 16px; }
+.wizard-body .advanced-body>p { margin:0 0 12px; font-size:14px; }
+.advanced-body .form-grid { gap:14px; }
+.advanced-body .field input { height:42px; }
+/* 학습 설정 값: 긴 키 이름이 잘리지 않도록 두 칸으로 놓는다. */
+.run-compute.run-config-grid { grid-template-columns:1fr 1fr; }
+.run-config-grid dt { overflow-wrap:anywhere; font-family:var(--mono); font-size:12px; }
+.asset-box + .asset-box { margin-top:12px; }
