@@ -1,13 +1,13 @@
 # 협업 규칙 §7 CI 파이프라인.
-#   PR(→ dev, → main), dev push : eslint · tsc · vitest · build + 이미지 빌드 (push 안 함)
+#   PR(→ develop, → main), develop push : eslint · tsc · vitest · build + 이미지 빌드 (push 안 함)
 #   main push(머지)             : 같은 검사 → 이미지 push  ghcr.io/devoops-team/frontend:{main, sha-<7자리>}
 name: CI
 
 on:
   pull_request:
-    branches: [dev, main]
+    branches: [develop, main]
   push:
-    branches: [dev, main]
+    branches: [develop, main]
 
 permissions:
   contents: read
@@ -72,8 +72,5 @@ jobs:
           push: ${{ env.PUSH == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # 백엔드 주소는 번들에 들어간다. 배포 주소가 정해지면 레포 변수 VITE_API_BASE에 넣는다.
-          build-args: |
-            VITE_API_BASE=${{ vars.VITE_API_BASE || 'http://localhost:8080' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

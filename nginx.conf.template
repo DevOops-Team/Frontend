@@ -1,0 +1,42 @@
+# nginx 공식 이미지는 시작할 때 /etc/nginx/templates/*.template의 ${환경변수}를 채워 conf.d에 쓴다.
+# 정의된 환경변수만 바꾸므로 $uri 같은 nginx 변수는 그대로 남는다.
+# BACKEND_URL: 백엔드 Service 주소 (예: http://backend.platform.svc.cluster.local:8000)
+# NGINX_LOCAL_RESOLVERS: NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1이면 entrypoint가 /etc/resolv.conf에서 채운다.
+server {
+  listen 8080;
+  root /usr/share/nginx/html;
+
+  # 백엔드 주소를 시작할 때가 아니라 요청 때 조회한다. 백엔드 Service가 아직 없어도 nginx가 뜬다.
+  resolver ${NGINX_LOCAL_RESOLVERS} valid=10s ipv6=off;
+  set $backend ${BACKEND_URL};
+
+  # 브라우저는 같은 주소의 /api · /swagger · /openapi.yaml만 부른다(src/features/training/api.ts).
+  # 그래서 nginx가 백엔드로 넘기고, 백엔드는 외부에 따로 열지 않는다.
+  location /api/ {
+    proxy_pass $backend;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    client_max_body_size 64m;
+  }
+  location /swagger/ {
+    proxy_pass $backend;
+  }
+  location = /openapi.yaml {
+    proxy_pass $backend;
+  }
+
+  # index.html은 매번 새로 받아 새 빌드(해시가 바뀐 assets)를 바로 반영한다.
+  location = /index.html {
+    add_header Cache-Control "no-cache";
+  }
+
+  # assets는 파일 이름에 해시가 들어가므로 오래 캐시해도 된다.
+  location /assets/ {
+    add_header Cache-Control "public, max-age=31536000, immutable";
+  }
+
+  location / {
+    try_files $uri /index.html;
+  }
+}

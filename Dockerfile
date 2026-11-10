@@ -3,12 +3,12 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY . .
-# 브라우저가 호출할 백엔드 주소. 빌드 시점에 번들에 들어간다.
-ARG VITE_API_BASE=http://localhost:8080
-ENV VITE_API_BASE=$VITE_API_BASE
 RUN npm test && npm run build
 
-FROM nginx:1.29-alpine
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# 비root(uid 101)로 8080에서 듣는 nginx. Kubernetes의 runAsNonRoot를 만족한다.
+FROM nginxinc/nginx-unprivileged:1.29-alpine
+ENV BACKEND_URL=http://backend.platform.svc.cluster.local:8000 \
+    NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist /usr/share/nginx/html
-EXPOSE 80
+EXPOSE 8080
