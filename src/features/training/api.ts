@@ -1,4 +1,4 @@
-import type { CreatedJob, Dataset, FilePreview, Job, JobEvent, JobFile, JobRequest, JobStatus, Model } from './types';
+import type { CreatedJob, FilePreview, Job, JobEvent, JobFile, JobStatus, SubmitSpec, TrainingOptions } from './types';
 
 // 백엔드 API 클라이언트. 개발 서버에서는 Vite 프록시가 /api를 백엔드로 넘긴다(vite.config.ts).
 // 실패를 가짜 데이터로 덮지 않고 ApiError로 화면까지 올린다.
@@ -59,37 +59,57 @@ export const jobEvents = (id: string) => request<JobEvent[]>(`/api/jobs/${seg(id
 export const jobFiles = (id: string) => request<JobFile[]>(`/api/jobs/${seg(id)}/files`);
 export const jobFile = (id: string, kind: string, name: string) => preview(`/api/jobs/${seg(id)}/files/${seg(kind)}/${seg(name)}`);
 
-export const listModels = () => items<Model>('/api/models');
-export const modelFile = (name: string, file: string) => preview(`/api/models/${seg(name)}/files/${seg(file)}`);
+export const getOptions = () => request<TrainingOptions>('/api/training/options');
 
-export const listDatasets = () => items<Dataset>('/api/datasets');
-export const getDataset = (id: string) => request<Dataset>(`/api/datasets/${seg(id)}`);
-export const datasetFile = (id: string, version: number, name: string) => preview(`/api/datasets/${seg(id)}/versions/${version}/files/${seg(name)}`);
+// 업로드할 파일 하나. path는 모델 폴더 안 경로(폴더명/...) 또는 데이터 파일 이름이다.
+export interface UploadFile {
+  path: string;
+  file: Blob;
+}
 
-export function createJob(body: JobRequest): Promise<CreatedJob> {
-  return request<CreatedJob>('/api/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+export interface Upload {
+  done: Promise<CreatedJob>;
+  abort: () => void;
+}
+
+// POST /api/jobs (multipart). 첫 파트는 spec(JSON), 이어서 model/<폴더>/<경로> · data/<파일>.
+// 경로는 파트 이름에 넣는다: 서버가 파일명은 기본 이름만 쓰기 때문이다.
+// 진행률을 보여 주려고 fetch 대신 XMLHttpRequest를 쓴다 (fetch는 업로드 진행 이벤트가 없다).
+export function createJob(spec: SubmitSpec, model: UploadFile[], data: UploadFile[], onProgress: (sent: number, total: number) => void): Upload {
+  const form = new FormData();
+  form.append('spec', new Blob([JSON.stringify(spec)], { type: 'application/json' }), 'spec.json');
+  for (const f of model) form.append(`model/${f.path}`, f.file, f.path.split('/').pop());
+  for (const f of data) form.append(`data/${f.path}`, f.file, f.path);
+
+  const xhr = new XMLHttpRequest();
+  const done = new Promise<CreatedJob>((resolve, reject) => {
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded, e.total); };
+    xhr.onload = () => {
+      let body: { error?: string; code?: string; fields?: { field: string; message: string }[] } & Partial<CreatedJob> = {};
+      try { body = JSON.parse(xhr.responseText) as typeof body; } catch { /* 프록시 HTML 등 */ }
+      if (xhr.status === 201) { resolve(body as CreatedJob); return; }
+      const fields = body.fields?.map((f) => `${f.field}: ${f.message}`).join(', ');
+      const base = body.error ?? `백엔드 응답 오류 (HTTP ${xhr.status})`;
+      reject(new ApiError(fields ? `${base} (${fields})` : base, xhr.status, body.code));
+    };
+    xhr.onerror = () => reject(new ApiError('업로드 중 연결이 끊겼습니다.', 0));
+    xhr.onabort = () => reject(new ApiError('업로드를 취소했습니다.', 0, 'ABORTED'));
+  });
+  xhr.open('POST', '/api/jobs');
+  xhr.send(form);
+  return { done, abort: () => xhr.abort() };
 }
 
 export interface JobForm {
   name: string;
-  model: string;
   strategy: string;
   gpus: number;
-  datasetId: string;
-  datasetVersion: number;
 }
 
-// 입력하지 않은 값: 이름은 백엔드가 {model}-{id}로 짓고, 바꾸지 않은 hyperparameters는 프로파일 기본값을 쓴다.
-export function buildJobRequest(f: JobForm, hyperparameters: Record<string, number> = {}): JobRequest {
+// 입력하지 않은 값: 이름은 백엔드가 {모델 폴더}-{id}로 짓고, 바꾸지 않은 hyperparameters는 기본값을 쓴다.
+export function buildSpec(f: JobForm, hyperparameters: Record<string, number | null> = {}): SubmitSpec {
   const name = f.name.trim();
-  return {
-    ...(name ? { name } : {}),
-    model: f.model,
-    strategy: f.strategy,
-    gpus: f.gpus,
-    dataset: { id: f.datasetId, version: f.datasetVersion },
-    hyperparameters,
-  };
+  return { ...(name ? { name } : {}), strategy: f.strategy, gpus: f.gpus, hyperparameters };
 }
 
 export function isTerminal(s: JobStatus): boolean {
