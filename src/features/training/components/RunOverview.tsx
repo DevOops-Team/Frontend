@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { StateBadge } from '@/shared/ui/StateBadge';
 import { JOB_DETAIL_POLL_MS, errorMessage, getJob, isTerminal, jobEvents, jobFile, jobFiles } from '../api';
 import { formatClock, formatDateTime } from '../lib/format';
+import { formatDuration } from '../lib/upload';
 import { STATUS_LABEL, runProgress, stepsPerEpoch, uiState } from '../lib/progress';
 import type { Job, JobEvent, JobFile } from '../types';
-import { JobDataset } from './DatasetFiles';
 import { FileList } from './FileList';
 
 // 쿼터 대기 이벤트. 정상 동작 중에도 길게 나와 화면에서는 뺀다. 원본은 /api/jobs/{id}/events에 남는다.
@@ -35,10 +35,9 @@ export function RunOverview({ job, events, files, onBack }: { job: Job; events: 
         <div><dt>rank 0 노드</dt><dd>{p?.nodeName ?? '-'}</dd></div>
       </dl>
     </section>
-    {job.dataset && <JobDataset id={job.dataset.id} version={job.dataset.version} />}
     <div className="run-detail-grid"><section className="card run-inputs"><div className="run-card-heading"><h2>학습 설정</h2><span className="small muted">실제로 쓰인 값</span></div><dl>
       <div><dt>학습 모델</dt><dd title={job.model}>{job.model}</dd></div>
-      <div><dt>학습 데이터</dt><dd title={cfg?.dataset.uri}>{job.dataset ? `${job.dataset.id} · v${job.dataset.version}` : '-'}</dd></div>
+      <div><dt>업로드 위치</dt><dd title={cfg?.dataset.uri}>{cfg?.dataset.uri ?? '-'}</dd></div>
       <div className="run-compute"><div><dt>학습 방식</dt><dd>{job.strategy.toUpperCase()}</dd></div><div><dt>사용 GPU</dt><dd>{job.gpus}개</dd></div><div><dt>큐</dt><dd>{job.queue}</dd></div></div>
       {cfg && <div className="run-compute run-config-grid">
         <div><dt>batch_size_per_gpu</dt><dd>{cfg.batch_size_per_gpu}</dd></div>
@@ -46,7 +45,7 @@ export function RunOverview({ job, events, files, onBack }: { job: Job; events: 
         <div><dt>epochs</dt><dd>{cfg.epochs}</dd></div>
         <div><dt>total_steps</dt><dd>{p && p.totalSteps > 0 ? p.totalSteps : '-'}</dd></div>
         <div><dt>learning_rate</dt><dd>{cfg.learning_rate}</dd></div>
-        <div><dt>checkpoint_every_steps</dt><dd>{cfg.checkpoint_every_steps ?? 'epoch마다'}</dd></div>
+        <div><dt>체크포인트 간격</dt><dd title={`τ = √(2 · ${cfg.checkpoint_policy.estimated_save_seconds}s · ${cfg.checkpoint_policy.mtbf_seconds}s)`}>{formatDuration(cfg.checkpoint_policy.interval_seconds)}마다</dd></div>
         <div><dt>체크포인트 형식</dt><dd>{cfg.checkpoint_format}</dd></div>
       </div>}
       <div><dt>JobSet</dt><dd title={job.jobsetName}>{job.jobsetName}</dd></div>
