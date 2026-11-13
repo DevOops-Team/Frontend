@@ -61,7 +61,7 @@ export const jobFile = (id: string, kind: string, name: string) => preview(`/api
 
 export const getOptions = () => request<TrainingOptions>('/api/training/options');
 
-// 업로드할 파일 하나. path는 모델 폴더 안 경로(폴더명/...) 또는 데이터 파일 이름이다.
+// 업로드할 파일 하나. path는 모델 폴더 안 경로(폴더명/...) 또는 데이터 · 학습 코드 파일 이름이다.
 export interface UploadFile {
   path: string;
   file: Blob;
@@ -72,14 +72,16 @@ export interface Upload {
   abort: () => void;
 }
 
-// POST /api/jobs (multipart). 첫 파트는 spec(JSON), 이어서 model/<폴더>/<경로> · data/<파일>.
+// POST /api/jobs (multipart). 첫 파트는 spec(JSON), 이어서 model/<폴더>/<경로> · data/<파일> · train/<파일>.py.
+// train.py는 학습 환경 이미지에 없고, 올린 파일이 학습 Pod의 /data/code/train.py로 들어간다.
 // 경로는 파트 이름에 넣는다: 서버가 파일명은 기본 이름만 쓰기 때문이다.
 // 진행률을 보여 주려고 fetch 대신 XMLHttpRequest를 쓴다 (fetch는 업로드 진행 이벤트가 없다).
-export function createJob(spec: SubmitSpec, model: UploadFile[], data: UploadFile[], onProgress: (sent: number, total: number) => void): Upload {
+export function createJob(spec: SubmitSpec, model: UploadFile[], data: UploadFile[], train: UploadFile, onProgress: (sent: number, total: number) => void): Upload {
   const form = new FormData();
   form.append('spec', new Blob([JSON.stringify(spec)], { type: 'application/json' }), 'spec.json');
   for (const f of model) form.append(`model/${f.path}`, f.file, f.path.split('/').pop());
   for (const f of data) form.append(`data/${f.path}`, f.file, f.path);
+  form.append(`train/${train.path}`, train.file, train.path);
 
   const xhr = new XMLHttpRequest();
   const done = new Promise<CreatedJob>((resolve, reject) => {

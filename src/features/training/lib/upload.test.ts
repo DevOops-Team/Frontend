@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { checkpointInterval, formatDuration, pickData, pickModel } from './upload';
+import { checkpointInterval, formatDuration, pickData, pickModel, pickTrain } from './upload';
 
-const LIMITS = { maxModelBytes: 2 * 2 ** 30, maxDataBytes: 2 ** 30, maxFiles: 200 };
+const LIMITS = { maxModelBytes: 2 * 2 ** 30, maxDataBytes: 2 ** 30, maxTrainBytes: 2 ** 20, maxFiles: 200 };
 const CKPT = { sizeFactor: 3, writeBytesPerSecond: 100e6, mtbfSeconds: 21600, minIntervalSeconds: 300 };
 
 describe('pickModel', () => {
@@ -30,6 +30,17 @@ describe('pickData', () => {
     expect(pickData([{ path: 'a.jsonl', size: 5 }], LIMITS).errors).toEqual([]);
     expect(pickData([{ path: 'a.csv', size: 5 }], LIMITS).errors[0]).toContain('a.csv');
     expect(pickData([], LIMITS).errors[0]).toContain('.jsonl');
+  });
+});
+
+describe('pickTrain', () => {
+  it('accepts exactly one non-empty .py file under the limit', () => {
+    expect(pickTrain([{ path: 'my_train.py', size: 100 }], LIMITS)).toEqual({ file: { path: 'my_train.py', size: 100 }, errors: [] });
+    expect(pickTrain([], LIMITS).errors[0]).toContain('하나');
+    expect(pickTrain([{ path: 'a.py', size: 1 }, { path: 'b.py', size: 1 }], LIMITS).errors[0]).toContain('하나');
+    expect(pickTrain([{ path: 'train.sh', size: 1 }], LIMITS).errors[0]).toContain('train.sh');
+    expect(pickTrain([{ path: 'train.py', size: 0 }], LIMITS).errors[0]).toContain('비어');
+    expect(pickTrain([{ path: 'train.py', size: 2 ** 20 + 1 }], LIMITS).errors[0]).toContain('너무 큽니다');
   });
 });
 
