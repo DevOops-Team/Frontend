@@ -22,7 +22,7 @@ export interface TrainingOptions {
   gpus: { min: number; max: number; default: number; options: number[] };
   datasetFormat: string;
   hyperparameters: HyperparameterDef[];
-  limits: { maxModelBytes: number; maxDataBytes: number; maxFiles: number };
+  limits: { maxModelBytes: number; maxDataBytes: number; maxTrainBytes: number; maxFiles: number };
   checkpoint: { sizeFactor: number; writeBytesPerSecond: number; mtbfSeconds: number; minIntervalSeconds: number };
 }
 
