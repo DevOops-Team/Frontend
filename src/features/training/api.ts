@@ -113,7 +113,7 @@ export function buildSpec(f: JobForm, hyperparameters: Record<string, number | n
 }
 
 export function isTerminal(s: JobStatus): boolean {
-  return s === 'SUCCEEDED' || s === 'FAILED';
+  return s === 'SUCCEEDED' || s === 'FAILED' || s === 'CANCELLED';
 }
 
 export function errorMessage(e: unknown): string {
