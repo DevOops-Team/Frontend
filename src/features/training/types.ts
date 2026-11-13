@@ -1,7 +1,8 @@
 // 백엔드 API 응답 모양. 정본은 Backend api/openapi.yaml(Swagger)이다.
 // 필드 이름은 camelCase이고, config.json 키만 snake_case 그대로다.
 
-export type JobStatus = 'QUEUED' | 'ADMITTED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED';
+// Backend가 Kafka job.lifecycle 사건으로 정한다 (GPU-146). RECOVERING: 재배치로 다음 세대 대기, CANCELLED: 중지.
+export type JobStatus = 'QUEUED' | 'ADMITTED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'RECOVERING' | 'CANCELLED';
 
 export interface HyperparameterDef {
   key: string;
