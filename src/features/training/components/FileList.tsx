@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useRef, useState } from 'react';
 import { errorMessage } from '../api';
+import { Dialog } from '@/shared/ui/Dialog';
 import { formatBytes } from '../lib/format';
 import type { FilePreview } from '../types';
 
@@ -13,43 +13,13 @@ type PreviewMode = 'inline' | 'modal';
 function PreviewBody({ preview, error, loading }: { preview: FilePreview | null; error: string; loading: boolean }) {
   return <>
     {error && <p role="alert" className="issues">{error}</p>}
-    {loading && !preview && !error && <p className="muted small">불러오는 중입니다.</p>}
+    {loading && !preview && !error && <p className="muted">불러오는 중입니다.</p>}
     {preview && <>
       {/* 키보드로도 긴 내용을 스크롤할 수 있게 포커스를 받는다 */}
       <pre className="file-preview" tabIndex={0}>{preview.text}</pre>
-      {preview.truncated && <p className="muted small">전체 {formatBytes(preview.totalSize)} 중 앞부분만 보여 줍니다.</p>}
+      {preview.truncated && <p className="muted">전체 {formatBytes(preview.totalSize)} 중 앞부분만 보여 줍니다.</p>}
     </>}
   </>;
-}
-
-function PreviewModal({ name, size, label, onClose, children }: { name: string; size: number; label: string; onClose: () => void; children: React.ReactNode }) {
-  const dialog = useRef<HTMLDivElement>(null);
-  const closeButton = useRef<HTMLButtonElement>(null);
-  useEffect(() => { closeButton.current?.focus(); }, []);
-
-  function onKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'Escape') { e.stopPropagation(); onClose(); return; }
-    if (e.key !== 'Tab') return;
-    const items = dialog.current?.querySelectorAll<HTMLElement>('button,pre');
-    const first = items?.[0];
-    const last = items?.[items.length - 1];
-    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
-    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
-  }
-
-  // 페이지의 스크롤 영역에 갇히지 않도록 body에 그린다.
-  return createPortal(
-    <div className="guided-modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="file-preview-title" className="card guided-modal file-modal" onKeyDown={onKeyDown}>
-        <header className="guided-modal-head">
-          <div className="file-modal-title"><span className="eyebrow">{label} · {formatBytes(size)}</span><h2 id="file-preview-title">{name}</h2></div>
-          <button ref={closeButton} type="button" className="btn ghost" onClick={onClose} aria-label="미리보기 닫기">×</button>
-        </header>
-        {children}
-      </div>
-    </div>,
-    document.body,
-  );
 }
 
 function FileRow({ name, size, load, mode, label }: { name: string; size: number; load: (name: string) => Promise<FilePreview>; mode: PreviewMode; label: string }) {
@@ -83,15 +53,15 @@ function FileRow({ name, size, load, mode, label }: { name: string; size: number
   return <li>
     <div className="file-row">
       <span className="file-name" title={name}>{name}</span>
-      <span className="muted small">{formatBytes(size)}</span>
-      {TEXT_FILE.test(name) && <button ref={opener} type="button" className="link small" aria-label={`${name} 미리보기`} aria-expanded={mode === 'inline' ? open : undefined} aria-haspopup={mode === 'modal' ? 'dialog' : undefined} onClick={() => { if (inlineOpen) close(); else void show(); }}>{inlineOpen ? '닫기' : '미리보기'}</button>}
+      <span className="muted num">{formatBytes(size)}</span>
+      {TEXT_FILE.test(name) && <button ref={opener} type="button" className="link" aria-label={`${name} 미리보기`} aria-expanded={mode === 'inline' ? open : undefined} aria-haspopup={mode === 'modal' ? 'dialog' : undefined} onClick={() => { if (inlineOpen) close(); else void show(); }}>{inlineOpen ? '닫기' : '미리보기'}</button>}
     </div>
     {inlineOpen && body}
-    {mode === 'modal' && open && <PreviewModal name={name} size={size} label={label} onClose={close}>{body}</PreviewModal>}
+    {mode === 'modal' && open && <Dialog titleId="file-preview-title" title={<code>{name}</code>} meta={<><span>{label}</span> <span className="num">{formatBytes(size)}</span></>} closeLabel="미리보기 닫기" onClose={close}>{body}</Dialog>}
   </li>;
 }
 
 export function FileList({ files, load, label, preview = 'inline' }: { files: { name: string; size: number }[]; load: (name: string) => Promise<FilePreview>; label: string; preview?: PreviewMode }) {
-  if (files.length === 0) return <p className="muted small">표시할 파일이 없습니다.</p>;
+  if (files.length === 0) return <p className="muted">표시할 파일이 없습니다.</p>;
   return <ul className="file-list" aria-label={label}>{files.map((f) => <FileRow key={f.name} name={f.name} size={f.size} load={load} mode={preview} label={label} />)}</ul>;
 }

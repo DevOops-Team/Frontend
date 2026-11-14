@@ -1,4 +1,4 @@
-# DevOops Frontend · Material 디자인
+# DevOops Frontend
 
 Vite + React + TypeScript로 만든 학습 화면입니다. 백엔드 API를 호출해 실제 작업을 제출하고 진행 상태를 봅니다. 실패를 가짜 데이터로 덮지 않고 오류로 보여 줍니다.
 
@@ -26,7 +26,9 @@ src/
 │   │   ├── components/           CreatePipeline(4단계), RunOverview(상세·폴링), FileList(파일·미리보기)
 │   │   └── lib/                  progress(진행률·단계), format
 │   └── theme/
-└── shared/ui/                    Icon, StateBadge
+├── shared/ui/                    Icon, StateBadge
+├── tokens.css · base.css         디자인 토큰(Cobalt, 화이트/다크)과 기본 규칙. 색 · 글꼴은 여기 토큰으로만 쓴다
+└── index.css                     화면 스타일 (hallmark redesign, GPU-155)
 ```
 
 ## 실행과 테스트
