@@ -64,6 +64,7 @@ export function CreatePipeline({ onCreated, onCancel }: { onCreated: (id: string
   const parsed = parseHyperparameters(options?.hyperparameters ?? [], hyper);
   const nameError = name.trim() && !NAME.test(name.trim()) ? '학습 이름은 1~63자의 소문자 · 숫자 · 하이픈만 쓸 수 있습니다.' : '';
   const ckpt = model && options ? checkpointInterval(model.pick.bytes, options.checkpoint) : null;
+  const changed = Object.entries(parsed.values);
   const fileCount = (model?.pick.files.length ?? 0) + (data?.pick.files.length ?? 0) + (train?.upload ? 1 : 0);
 
   function chooseModel(list: FileList | null) {
@@ -129,30 +130,30 @@ export function CreatePipeline({ onCreated, onCancel }: { onCreated: (id: string
   const percent = sent ? Math.min(100, Math.floor((sent.loaded / sent.total) * 100)) : 0;
 
   return <>
-    <header className="create-head"><h1>새 학습 만들기</h1><p className="muted">내 컴퓨터의 Hugging Face 모델 폴더, jsonl 학습 데이터, 학습 코드(train.py)를 올려 학습합니다.</p></header>
+    <header className="create-head"><h1>새 학습 만들기</h1></header>
     <div className="create-layout">
-      <section className="panel wizard" aria-label="새 학습 단계">
+      <section className="panel wizard" aria-label="새 학습 단계" data-grow={step === 3 && advancedOpen ? 'true' : undefined}>
         <ol className="stepper">{['모델', '데이터', '학습 코드', '방식·GPU', '최종 확인'].map((label, i) => <li key={label} data-state={i === step ? 'current' : i < step ? 'done' : ''}><button type="button" disabled={i > step || uploading} aria-current={i === step ? 'step' : undefined} onClick={() => { setIssue(''); setStep(i); }}><span className="step-num">{i < step ? <Icon name="check" size={14} /> : i + 1}</span>{label}</button></li>)}</ol>
         <div className="wizard-body">
-          {step === 0 && <section><h2>어떤 모델을 학습할까요?</h2><p className="muted">Hugging Face 형식의 모델 폴더(config.json, 가중치, 토크나이저)를 통째로 고르세요. 이름은 비워 두면 폴더 이름으로 정해집니다.</p>
-            <div className="form-grid"><label className="field"><span>학습 이름 (선택)</span><input aria-label="학습 이름" placeholder="예: gpt2-demo" value={name} onChange={(e) => setName(e.target.value)} /><span className="hint">소문자, 숫자, 하이픈</span></label>
+          {step === 0 && <section><h2>어떤 모델을 학습할까요?</h2><p className="muted">config.json이 들어 있는 Hugging Face 모델 폴더를 통째로 고르세요.</p>
+            <div className="form-grid"><label className="field"><span>학습 이름 (선택)</span><input aria-label="학습 이름" placeholder="예: gpt2-demo" value={name} onChange={(e) => setName(e.target.value)} /><span className="hint">소문자, 숫자, 하이픈. 비워 두면 폴더 이름</span></label>
               <label className="field"><span>모델 폴더</span><input aria-label="모델 폴더" type="file" {...{ webkitdirectory: '', directory: '' }} multiple onChange={(e) => chooseModel(e.target.files)} /><span className="hint">최대 {formatBytes(limits.maxModelBytes)}</span></label>
             </div>
             {!options && !loadError && <p className="muted">설정을 불러오는 중입니다.</p>}
             {model && model.pick.files.length > 0 && <div className="asset-box"><div className="asset-head"><strong>{model.pick.folder}</strong><span className="muted num">파일 {model.pick.files.length}개, {formatBytes(model.pick.bytes)}</span></div>
               <ul className="asset-list">{model.pick.files.slice(0, 8).map((f) => <li key={f.path}><span>{f.path.slice(model.pick.folder.length + 1)}</span><span className="num">{formatBytes(f.size)}</span></li>)}{model.pick.files.length > 8 && <li><span>외 {model.pick.files.length - 8}개</span></li>}</ul></div>}
           </section>}
-          {step === 1 && <section><h2>어떤 데이터로 학습할까요?</h2><p className="muted">한 줄에 <code>{'{"text": "..."}'}</code> 하나씩 들어 있는 .jsonl 파일을 고르세요. 모든 GPU가 같은 데이터를 받아 나눠 학습합니다.</p>
+          {step === 1 && <section><h2>어떤 데이터로 학습할까요?</h2><p className="muted">한 줄에 <code>{'{"text": "..."}'}</code> 하나씩 담긴 .jsonl 파일을 고르세요.</p>
             <div className="form-grid"><label className="field"><span>학습 데이터</span><input aria-label="학습 데이터" type="file" accept=".jsonl" multiple onChange={(e) => chooseData(e.target.files)} /><span className="hint">최대 {formatBytes(limits.maxDataBytes)}</span></label></div>
             {data && data.pick.files.length > 0 && <div className="asset-box"><div className="asset-head"><strong>파일 {data.pick.files.length}개</strong><span className="muted num">{formatBytes(data.pick.bytes)}</span></div>
               <ul className="asset-list">{data.pick.files.map((f) => <li key={f.path}><span>{f.path}</span><span className="num">{formatBytes(f.size)}</span></li>)}</ul></div>}
           </section>}
-          {step === 2 && <section><h2>어떤 코드로 학습할까요?</h2><p className="muted">학습 코드(.py) 파일 하나를 고르세요. 파일 이름과 상관없이 학습 Pod의 <code>/data/code/train.py</code>로 들어가 torchrun으로 실행됩니다. 이미지에는 torch, transformers 학습 환경만 있습니다.</p>
+          {step === 2 && <section><h2>어떤 코드로 학습할까요?</h2><p className="muted">torchrun으로 실행할 학습 코드(.py) 파일 하나를 고르세요.</p>
             <div className="form-grid"><label className="field"><span>학습 코드</span><input aria-label="학습 코드" type="file" accept=".py" onChange={(e) => chooseTrain(e.target.files)} /><span className="hint">최대 {formatBytes(limits.maxTrainBytes)}</span></label></div>
-            <dl className="env-list"><div><dt>설정</dt><dd><code>TRAIN_CONFIG</code></dd></div><div><dt>모델, 데이터</dt><dd><code>DATA_DIR/model</code> <code>DATA_DIR/data</code></dd></div><div><dt>체크포인트</dt><dd><code>CKPT_DIR</code></dd></div></dl>
+            <dl className="env-list"><div><dt>실행 위치</dt><dd><code>/data/code/train.py</code></dd></div><div><dt>설정</dt><dd><code>TRAIN_CONFIG</code></dd></div><div><dt>모델, 데이터</dt><dd><code>DATA_DIR/model</code> <code>DATA_DIR/data</code></dd></div><div><dt>체크포인트</dt><dd><code>CKPT_DIR</code></dd></div></dl>
             {train?.upload && <div className="asset-box"><div className="asset-head"><strong>{train.upload.path}</strong><span className="muted num">{formatBytes(train.upload.file.size)}, train.py로 저장</span></div></div>}
           </section>}
-          {step === 3 && <section className="strategy-step"><h2>학습 방식과 GPU를 선택하세요</h2><p className="muted">GPU 메모리가 부족한 큰 모델에는 FSDP가 적합합니다.</p>
+          {step === 3 && <section className="strategy-step"><h2>학습 방식과 GPU를 선택하세요</h2><p className="muted">큰 모델은 FSDP, GPU 한 장에 들어가는 모델은 DDP를 고르세요.</p>
             <div className="choice-list" role="radiogroup" aria-label="학습 방식">{(options?.strategies ?? []).map((s) => { const t = STRATEGY_TEXT[s.name] ?? strategyText; return <label className="choice" key={s.name} data-selected={strategy === s.name}><input type="radio" name="strategy" checked={strategy === s.name} onChange={() => chooseStrategy(s.name)} /><span className="choice-title"><code>{s.name.toUpperCase()}</code><span className="tag">{t.tag}</span></span><strong>{t.title}</strong><span className="muted">{t.body}</span></label>; })}</div>
             <div className="form-grid"><label className="field"><span>총 GPU 개수 (노드당 1개)</span><select aria-label="총 GPU 개수" value={gpus} onChange={(e) => setGpus(Number(e.target.value))}>{gpuOptions.map(({ n, reason }) => <option key={n} value={n} disabled={Boolean(reason)}>{n}개{reason ? ` (${reason})` : ''}</option>)}</select></label></div>
             <div className="advanced-settings">
@@ -161,12 +162,11 @@ export function CreatePipeline({ onCreated, onCancel }: { onCreated: (id: string
                 <div className="form-grid">{options?.hyperparameters.map((h) => <label className="field" key={h.key}><span><code>{h.key}</code></span><input aria-label={h.key} type="text" inputMode="decimal" autoComplete="off" placeholder={h.default === null ? '없음' : String(h.default)} value={hyper[h.key] ?? ''} onChange={(e) => { setHyper({ ...hyper, [h.key]: e.target.value }); setIssue(''); }} /><span className="hint">{rangeText(h)}</span></label>)}</div></div>}
             </div>
           </section>}
-          {step === 4 && <section className="review-step"><h2>이 설정으로 학습을 시작할까요?</h2><p className="muted">{strategyText.choice}</p>
-            <dl className="review-grid"><div><dt>학습 이름</dt><dd>{name.trim() || `${model?.pick.folder ?? ''}-(자동)`}</dd></div><div><dt>학습 방식</dt><dd><code>{strategy.toUpperCase()}</code></dd></div><div><dt>사용 GPU</dt><dd className="num">{gpus}대 × GPU 1개</dd></div>
-              <div><dt>학습 모델</dt><dd>{model?.pick.folder}<span className="dd-sub num">{formatBytes(model?.pick.bytes ?? 0)}</span></dd></div><div><dt>학습 데이터</dt><dd className="num">파일 {data?.pick.files.length}개<span className="dd-sub">{formatBytes(data?.pick.bytes ?? 0)}</span></dd></div><div><dt>학습 코드</dt><dd>{train?.upload?.path}<span className="dd-sub num">{formatBytes(train?.upload?.file.size ?? 0)}</span></dd></div>
-              {ckpt && <div><dt>체크포인트 간격</dt><dd className="num">약 {formatDuration(ckpt.intervalSeconds)}마다<span className="dd-sub">저장 약 {formatDuration(ckpt.saveSeconds)}</span></dd></div>}
-              {options?.hyperparameters.map((h) => <div key={h.key}><dt><code>{h.key}</code></dt><dd className="num">{parsed.values[h.key] ?? h.default ?? '없음'}</dd></div>)}</dl>
-            <p className="help-note">체크포인트 간격은 저장 시간과 장애 때 잃는 시간의 합이 가장 작도록 계산합니다. 학습을 시작하면 처음 몇 step을 재서 저장 횟수를 정합니다.</p>
+          {step === 4 && <section className="review-step"><h2>이 설정으로 학습을 시작할까요?</h2><p className="muted">아래 설정으로 파일을 올리고 학습을 시작합니다.</p>
+            <dl className="review-grid"><div><dt>학습 이름</dt><dd>{name.trim() || `${model?.pick.folder ?? ''}-(자동)`}</dd></div><div><dt>방식, GPU</dt><dd><code>{strategy.toUpperCase()}</code> <span className="num">{gpus}개</span></dd></div>
+              <div><dt>모델</dt><dd>{model?.pick.folder}<span className="dd-sub num">{formatBytes(model?.pick.bytes ?? 0)}</span></dd></div><div><dt>데이터</dt><dd className="num">파일 {data?.pick.files.length}개<span className="dd-sub">{formatBytes(data?.pick.bytes ?? 0)}</span></dd></div><div><dt>학습 코드</dt><dd>{train?.upload?.path}<span className="dd-sub num">{formatBytes(train?.upload?.file.size ?? 0)}</span></dd></div>
+              {ckpt && <div><dt>체크포인트 간격</dt><dd className="num">약 {formatDuration(ckpt.intervalSeconds)}마다</dd></div>}
+              <div><dt>상세 설정</dt><dd>{changed.length === 0 ? '기본값' : changed.map(([k, v]) => <span key={k} className="dd-sub"><code>{k}</code> {v}</span>)}</dd></div></dl>
             {uploading && <div className="track" role="progressbar" aria-label="업로드 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ transform: `scaleX(${percent / 100})` }} /></div>}
             {uploading && <p className="muted num">{percent < 100 ? `업로드 중 ${percent}%, ${formatBytes(sent.loaded)} / ${formatBytes(sent.total)}` : '업로드 완료. 학습을 제출하는 중입니다.'}</p>}
           </section>}

@@ -115,7 +115,7 @@ table.list td:first-child .link { font-size: var(--text-md); }
 .create-head { display: grid; gap: var(--space-xs); }
 .create-head h1 { font-size: var(--text-2xl); max-width: none; }
 .create-layout { display: grid; grid-template-columns: minmax(0, 1fr) 272px; gap: var(--space-lg); align-items: start; }
-.wizard { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-width: 0; overflow: hidden; }
+.wizard { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-width: 0; overflow: clip; }
 .stepper { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); margin: 0; padding: 0 var(--space-md); list-style: none; border-bottom: var(--rule-hair) solid var(--color-rule); }
 .stepper button { display: flex; align-items: center; justify-content: center; gap: var(--space-xs); width: 100%; min-height: 52px; padding: 0 var(--space-2xs); border: 0; background: none; color: var(--color-muted); font: 500 var(--text-sm)/1.2 var(--font-body); white-space: nowrap; cursor: pointer; box-shadow: inset 0 -2px 0 transparent; transition: color var(--dur-micro) var(--ease-out), box-shadow var(--dur-micro) var(--ease-out); }
 .stepper button:hover:not(:disabled) { color: var(--color-ink); }
@@ -192,6 +192,20 @@ table.list td:first-child .link { font-size: var(--text-md); }
 .summary-list > div { display: flex; justify-content: space-between; gap: var(--space-md); padding: var(--space-xs) 0; border-top: var(--rule-hair) solid var(--color-rule); font-size: var(--text-sm); }
 .summary-list dt { color: var(--color-muted); }
 .summary-list dd { margin: 0; color: var(--color-ink); font-weight: 500; text-align: right; overflow-wrap: anywhere; min-width: 0; }
+
+/* new run fills the screen: the step scrolls inside the card, 취소 and 다음 stay at its foot */
+.app:has(.page-create) { height: 100dvh; }
+.app:has(.page-create) .app-main { min-height: 0; }
+.page-create { flex: 1; min-height: 0; grid-template-rows: auto minmax(0, 1fr); gap: var(--space-lg); padding-bottom: var(--space-lg); }
+.page-create .create-layout { min-height: 0; height: 100%; }
+.page-create .wizard { height: 100%; min-height: 0; }
+.page-create .wizard-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+/* 방식·GPU grows when 상세 설정 opens; its actions stick to the screen's foot instead */
+.app:has(.wizard[data-grow]) { height: auto; }
+.page-create:has(.wizard[data-grow]) { flex: none; }
+.page-create:has(.wizard[data-grow]) .create-layout, .page-create .wizard[data-grow] { height: auto; }
+.page-create .wizard[data-grow] .wizard-body { overflow: visible; }
+.wizard[data-grow] .wizard-actions { position: sticky; bottom: 0; z-index: var(--z-sticky); }
 
 /* ---------- run detail ---------- */
 .run { display: grid; gap: var(--space-lg); }
@@ -282,12 +296,15 @@ table.list td:first-child .link { font-size: var(--text-md); }
 @media (max-width: 75rem) {
   .create-layout { grid-template-columns: minmax(0, 1fr); }
   .summary { position: static; }
+  .page-create .summary { display: none; }
   .run-grid { grid-template-columns: minmax(0, 1fr); }
   .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: var(--space-md); }
   .metrics > div:nth-child(4) { padding-left: 0; border-left: 0; }
 }
 @media (max-width: 60rem) {
   .app { grid-template-columns: minmax(0, 1fr); }
+  .app:has(.page-create) { grid-template-rows: auto minmax(0, 1fr); }
+  .app:has(.wizard[data-grow]) { grid-template-rows: none; }
   .app-nav { position: static; height: auto; flex-direction: row; align-items: center; flex-wrap: wrap; gap: var(--space-sm); padding: var(--space-xs) var(--space-md); border-right: 0; border-bottom: var(--rule-hair) solid var(--color-rule); }
   .app-nav nav { display: flex; gap: var(--space-2xs); overflow-x: auto; }
   .nav-caption, .nav-bottom { display: none; }
