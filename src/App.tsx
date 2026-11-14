@@ -66,10 +66,6 @@ export function App() {
             <div><dt>완료한 학습</dt><dd className="num">{count('SUCCEEDED')}<small>개</small></dd></div>
             <div><dt>진행 중인 학습</dt><dd className="num">{count('QUEUED', 'ADMITTED', 'RUNNING', 'RECOVERING')}<small>개</small></dd></div>
           </dl>
-          <dl className="intro-row">
-            <div><dt><code>FSDP</code> <span className="tag">메모리 절약</span></dt><dd>모델을 여러 GPU에 나눠 담아 학습해요.</dd></div>
-            <div><dt>파일 업로드 <span className="tag">S3</span></dt><dd>모델 폴더와 jsonl 데이터를 올리면 체크포인트 간격을 계산해 학습합니다.</dd></div>
-          </dl>
           <section className="ledger" aria-labelledby="ledger-title">
             <div className="ledger-head"><h2 id="ledger-title">내 학습</h2><span className="muted">총 {jobs.length}개</span></div>
             <div className="table-wrap">

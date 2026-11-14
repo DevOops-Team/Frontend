@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Dialog } from '@/shared/ui/Dialog';
 import { Icon } from '@/shared/ui/Icon';
 import { StateBadge } from '@/shared/ui/StateBadge';
 import { JOB_DETAIL_POLL_MS, errorMessage, getJob, isTerminal, jobEvents, jobFile, jobFiles } from '../api';
@@ -20,43 +21,35 @@ export function RunOverview({ job, events, files, onBack }: { job: Job; events: 
   const failure = job.status === 'FAILED' ? job.statusMessage : undefined;
   const caption = failure ?? (progress.complete ? '학습과 결과 저장을 마쳤습니다.' : `${progress.stages[progress.active].label} 단계 · 상태가 자동으로 업데이트됩니다.`);
   const cfg = job.config;
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsOpener = useRef<HTMLButtonElement>(null);
+  function closeSettings() { setSettingsOpen(false); settingsOpener.current?.focus(); }
 
   return <div className="run">
     <header className="run-head">
       <div><button type="button" className="link back-link" onClick={onBack}><Icon name="back" size={16} />학습 목록</button><h1 title={job.name}>{job.name}</h1></div>
       <div className="run-head-meta"><span><code>{job.strategy.toUpperCase()}</code></span><span className="num">GPU {job.gpus}개</span><StateBadge state={state} label={STATUS_LABEL[job.status]} /></div>
     </header>
-    <section className="panel run-progress" data-state={state} aria-labelledby="run-progress-title">
-      <div className="progress-top"><h2 id="run-progress-title">{progress.headline}</h2><p className="progress-percent"><strong className="num">{progress.percent}<span>%</span></strong><span>전체 진행률</span></p></div>
-      <div className="track" role="progressbar" aria-label="전체 학습 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percent} aria-valuetext={`${progress.percent}%, ${progress.headline}`}><span style={{ transform: `scaleX(${progress.percent / 100})` }} /></div>
-      <ol className="stages" aria-label="실행 단계">{progress.stages.map((s, i) => <li key={s.label} data-state={s.state} aria-current={s.state === 'active' || s.state === 'error' ? 'step' : undefined}><span className="stage-mark" aria-hidden="true">{s.state === 'done' ? <Icon name="check" size={14} /> : s.state === 'error' ? <Icon name="cross" size={14} /> : i + 1}</span><div><strong>{s.label}</strong><span>{s.state === 'done' ? '완료' : s.state === 'active' ? (job.status === 'QUEUED' ? '대기 중' : '진행 중') : s.state === 'error' ? '실패' : '대기'}</span></div></li>)}</ol>
-      <p className="progress-caption">{caption}</p>
-      <dl className="metrics">
-        <div><dt>Step</dt><dd className="num">{p && p.totalSteps > 0 ? `${p.step} / ${p.totalSteps}` : '-'}</dd></div>
-        <div><dt>Loss (전체 rank 평균)</dt><dd className="num">{p && p.step > 0 ? p.loss.toFixed(4) : '-'}</dd></div>
-        <div><dt>마지막 체크포인트</dt><dd className="num">{p && p.lastCheckpointStep > 0 ? p.lastCheckpointStep : '-'}</dd></div>
-        <div><dt>클러스터</dt><dd><code>{job.cluster ?? '-'}</code></dd></div>
-        <div><dt>rank 0 노드</dt><dd><code>{p?.nodeName ?? '-'}</code></dd></div>
-      </dl>
-    </section>
     <div className="run-grid">
-      <section className="panel run-inputs" aria-labelledby="run-inputs-title"><div className="panel-head"><h2 id="run-inputs-title">학습 설정</h2><span className="muted">실제로 쓰인 값</span></div>
+      <section className="panel run-progress" data-state={state} aria-labelledby="run-progress-title">
+        <div className="progress-top"><h2 id="run-progress-title">{progress.headline}</h2><p className="progress-percent"><strong className="num">{progress.percent}<span>%</span></strong><span>전체 진행률</span></p></div>
+        <div className="track" role="progressbar" aria-label="전체 학습 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percent} aria-valuetext={`${progress.percent}%, ${progress.headline}`}><span style={{ transform: `scaleX(${progress.percent / 100})` }} /></div>
+        <ol className="stages" aria-label="실행 단계">{progress.stages.map((s, i) => <li key={s.label} data-state={s.state} aria-current={s.state === 'active' || s.state === 'error' ? 'step' : undefined}><span className="stage-mark" aria-hidden="true">{s.state === 'done' ? <Icon name="check" size={14} /> : s.state === 'error' ? <Icon name="cross" size={14} /> : i + 1}</span><div><strong>{s.label}</strong><span>{s.state === 'done' ? '완료' : s.state === 'active' ? (job.status === 'QUEUED' ? '대기 중' : '진행 중') : s.state === 'error' ? '실패' : '대기'}</span></div></li>)}</ol>
+        <p className="progress-caption">{caption}</p>
+        <dl className="metrics">
+          <div><dt>Step</dt><dd className="num">{p && p.totalSteps > 0 ? `${p.step} / ${p.totalSteps}` : '-'}</dd></div>
+          <div><dt>Loss (전체 rank 평균)</dt><dd className="num">{p && p.step > 0 ? p.loss.toFixed(4) : '-'}</dd></div>
+          <div><dt>마지막 체크포인트</dt><dd className="num">{p && p.lastCheckpointStep > 0 ? p.lastCheckpointStep : '-'}</dd></div>
+          <div><dt>클러스터</dt><dd><code>{job.cluster ?? '-'}</code></dd></div>
+          <div><dt>rank 0 노드</dt><dd><code>{p?.nodeName ?? '-'}</code></dd></div>
+        </dl>
+      </section>
+      <section className="panel run-inputs" aria-labelledby="run-inputs-title">
+        <div className="panel-head"><h2 id="run-inputs-title">학습 설정</h2><button ref={settingsOpener} type="button" className="key" aria-haspopup="dialog" onClick={() => setSettingsOpen(true)}>전체 설정 보기</button></div>
         <dl className="kv">
           <div><dt>학습 모델</dt><dd title={job.model}><code>{job.model}</code></dd></div>
-          <div><dt>업로드 위치</dt><dd title={cfg?.dataset.uri}><code>{cfg?.dataset.uri ?? '-'}</code></dd></div>
-          <div><dt>학습 방식</dt><dd><code>{job.strategy.toUpperCase()}</code></dd></div>
-          <div><dt>사용 GPU</dt><dd className="num">{job.gpus}개</dd></div>
           <div><dt>큐</dt><dd><code>{job.queue}</code></dd></div>
-          {cfg && <>
-            <div><dt><code>batch_size_per_gpu</code></dt><dd className="num">{cfg.batch_size_per_gpu}</dd></div>
-            <div><dt><code>steps_per_epoch</code></dt><dd className="num">{stepsPerEpoch(job) ?? '-'}</dd></div>
-            <div><dt><code>epochs</code></dt><dd className="num">{cfg.epochs}</dd></div>
-            <div><dt><code>total_steps</code></dt><dd className="num">{p && p.totalSteps > 0 ? p.totalSteps : '-'}</dd></div>
-            <div><dt><code>learning_rate</code></dt><dd className="num">{cfg.learning_rate}</dd></div>
-            <div><dt>체크포인트 간격</dt><dd title={`τ = √(2 · ${cfg.checkpoint_policy.estimated_save_seconds}s · ${cfg.checkpoint_policy.mtbf_seconds}s)`}>{formatDuration(cfg.checkpoint_policy.interval_seconds)}마다</dd></div>
-            <div><dt>체크포인트 형식</dt><dd><code>{cfg.checkpoint_format}</code></dd></div>
-          </>}
-          <div><dt>JobSet</dt><dd title={job.jobsetName}><code>{job.jobsetName}</code></dd></div>
+          {cfg && <div><dt>체크포인트 간격</dt><dd>{formatDuration(cfg.checkpoint_policy.interval_seconds)}마다</dd></div>}
         </dl>
         <div className="panel-head files-head"><h2>작업 파일</h2></div>
         <FileList label="작업 파일" preview="modal" files={files} load={(name) => jobFile(job.id, files.find((f) => f.name === name)?.kind ?? 'code', name)} />
@@ -67,6 +60,25 @@ export function RunOverview({ job, events, files, onBack }: { job: Job; events: 
         <footer className="history-foot muted">총 {ordered.length}개 기록, 시간순</footer>
       </section>
     </div>
+    {settingsOpen && <Dialog titleId="run-settings-title" title="학습 설정" meta="실제로 쓰인 값" closeLabel="학습 설정 닫기" onClose={closeSettings}>
+      <dl className="kv">
+        <div><dt>학습 모델</dt><dd title={job.model}><code>{job.model}</code></dd></div>
+        <div><dt>업로드 위치</dt><dd title={cfg?.dataset.uri}><code>{cfg?.dataset.uri ?? '-'}</code></dd></div>
+        <div><dt>학습 방식</dt><dd><code>{job.strategy.toUpperCase()}</code></dd></div>
+        <div><dt>사용 GPU</dt><dd className="num">{job.gpus}개</dd></div>
+        <div><dt>큐</dt><dd><code>{job.queue}</code></dd></div>
+        {cfg && <>
+          <div><dt><code>batch_size_per_gpu</code></dt><dd className="num">{cfg.batch_size_per_gpu}</dd></div>
+          <div><dt><code>steps_per_epoch</code></dt><dd className="num">{stepsPerEpoch(job) ?? '-'}</dd></div>
+          <div><dt><code>epochs</code></dt><dd className="num">{cfg.epochs}</dd></div>
+          <div><dt><code>total_steps</code></dt><dd className="num">{p && p.totalSteps > 0 ? p.totalSteps : '-'}</dd></div>
+          <div><dt><code>learning_rate</code></dt><dd className="num">{cfg.learning_rate}</dd></div>
+          <div><dt>체크포인트 간격</dt><dd title={`τ = √(2 · ${cfg.checkpoint_policy.estimated_save_seconds}s · ${cfg.checkpoint_policy.mtbf_seconds}s)`}>{formatDuration(cfg.checkpoint_policy.interval_seconds)}마다</dd></div>
+          <div><dt>체크포인트 형식</dt><dd><code>{cfg.checkpoint_format}</code></dd></div>
+        </>}
+        <div><dt>JobSet</dt><dd title={job.jobsetName}><code>{job.jobsetName}</code></dd></div>
+      </dl>
+    </Dialog>}
   </div>;
 }
 

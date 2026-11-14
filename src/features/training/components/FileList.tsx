@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useRef, useState } from 'react';
 import { errorMessage } from '../api';
-import { Icon } from '@/shared/ui/Icon';
+import { Dialog } from '@/shared/ui/Dialog';
 import { formatBytes } from '../lib/format';
 import type { FilePreview } from '../types';
 
@@ -21,36 +20,6 @@ function PreviewBody({ preview, error, loading }: { preview: FilePreview | null;
       {preview.truncated && <p className="muted">전체 {formatBytes(preview.totalSize)} 중 앞부분만 보여 줍니다.</p>}
     </>}
   </>;
-}
-
-function PreviewModal({ name, size, label, onClose, children }: { name: string; size: number; label: string; onClose: () => void; children: React.ReactNode }) {
-  const dialog = useRef<HTMLDivElement>(null);
-  const closeButton = useRef<HTMLButtonElement>(null);
-  useEffect(() => { closeButton.current?.focus(); }, []);
-
-  function onKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'Escape') { e.stopPropagation(); onClose(); return; }
-    if (e.key !== 'Tab') return;
-    const items = dialog.current?.querySelectorAll<HTMLElement>('button,pre');
-    const first = items?.[0];
-    const last = items?.[items.length - 1];
-    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
-    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
-  }
-
-  // 페이지의 스크롤 영역에 갇히지 않도록 body에 그린다.
-  return createPortal(
-    <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="file-preview-title" className="modal" onKeyDown={onKeyDown}>
-        <header className="modal-head">
-          <div><h2 id="file-preview-title">{name}</h2><p className="muted"><span>{label}</span> <span className="num">{formatBytes(size)}</span></p></div>
-          <button ref={closeButton} type="button" className="key key--icon" onClick={onClose} aria-label="미리보기 닫기"><Icon name="cross" size={18} /></button>
-        </header>
-        {children}
-      </div>
-    </div>,
-    document.body,
-  );
 }
 
 function FileRow({ name, size, load, mode, label }: { name: string; size: number; load: (name: string) => Promise<FilePreview>; mode: PreviewMode; label: string }) {
@@ -88,7 +57,7 @@ function FileRow({ name, size, load, mode, label }: { name: string; size: number
       {TEXT_FILE.test(name) && <button ref={opener} type="button" className="link" aria-label={`${name} 미리보기`} aria-expanded={mode === 'inline' ? open : undefined} aria-haspopup={mode === 'modal' ? 'dialog' : undefined} onClick={() => { if (inlineOpen) close(); else void show(); }}>{inlineOpen ? '닫기' : '미리보기'}</button>}
     </div>
     {inlineOpen && body}
-    {mode === 'modal' && open && <PreviewModal name={name} size={size} label={label} onClose={close}>{body}</PreviewModal>}
+    {mode === 'modal' && open && <Dialog titleId="file-preview-title" title={<code>{name}</code>} meta={<><span>{label}</span> <span className="num">{formatBytes(size)}</span></>} closeLabel="미리보기 닫기" onClose={close}>{body}</Dialog>}
   </li>;
 }
 
