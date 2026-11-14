@@ -9,3 +9,6 @@ kubeconfig*
 *.tfvars
 !*.tfvars.example
 .DS_Store
+
+# hallmark 디자인 점검 기록 (로컬)
+.hallmark/
