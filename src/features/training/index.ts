@@ -3,5 +3,5 @@
 export { CreatePipeline } from './components/CreatePipeline';
 export { RunPage } from './components/RunOverview';
 export { JOB_LIST_POLL_MS, errorMessage, listJobs } from './api';
-export { STATUS_LABEL, uiState } from './lib/progress';
+export { STATUS_LABEL, runProgress, uiState } from './lib/progress';
 export type { CreatedJob, Job, JobEvent, JobFile, TrainConfig, TrainingOptions } from './types';

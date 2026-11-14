@@ -10,7 +10,11 @@
         document.documentElement.dataset.theme = savedTheme === 'dark' || savedTheme === 'light' ? savedTheme : 'light';
       } catch { /* React applies the default if storage is unavailable. */ }
     </script>
-    <title>DevOops · Google</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600&family=IBM+Plex+Sans:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <title>DevOops</title>
+    <meta name="description" content="Hugging Face 모델과 학습 데이터를 올려 GPU 클러스터에서 학습하고 진행 상황을 봅니다." />
   </head>
   <body>
     <div id="root"></div>
