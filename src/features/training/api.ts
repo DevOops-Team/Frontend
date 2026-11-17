@@ -59,10 +59,9 @@ export const jobEvents = (id: string) => request<JobEvent[]>(`/api/jobs/${seg(id
 export const jobFiles = (id: string) => request<JobFile[]>(`/api/jobs/${seg(id)}/files`);
 export const jobFile = (id: string, kind: string, name: string) => preview(`/api/jobs/${seg(id)}/files/${seg(kind)}/${seg(name)}`);
 
-// 학습 완료 모델. 내려받기는 브라우저가 링크로 직접 받는다(수 GB라 fetch로 메모리에 담지 않는다).
-// 학습 중이면 409 NOT_FINISHED, 승인 체크포인트가 없으면 404.
+// 학습 완료 모델. 학습 중이면 409 NOT_FINISHED, 승인 체크포인트가 없으면 404.
+// 파일 링크는 백엔드가 누를 때마다 S3 presigned URL을 만들어 302로 보내므로, 브라우저가 S3에서 직접 받는다.
 export const getTrainedModel = (id: string) => request<TrainedModel>(`/api/jobs/${seg(id)}/model`);
-export const modelArchiveUrl = (id: string) => `/api/jobs/${seg(id)}/model/archive`;
 export const modelFileUrl = (id: string, name: string) => `/api/jobs/${seg(id)}/model/files/${seg(name)}`;
 
 export const getOptions = () => request<TrainingOptions>('/api/training/options');
