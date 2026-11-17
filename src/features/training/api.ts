@@ -66,6 +66,12 @@ export const modelFileUrl = (id: string, name: string) => `/api/jobs/${seg(id)}/
 
 export const getOptions = () => request<TrainingOptions>('/api/training/options');
 
+// 끝난 학습 삭제 (GPU-196): S3의 체크포인트 · 최종 모델 · 올린 파일을 모든 버전까지 영구 삭제한 뒤 목록에서 뺀다. 성공은 204.
+export async function deleteJob(id: string): Promise<void> {
+  const res = await fetch(`/api/jobs/${seg(id)}`, { method: 'DELETE' });
+  if (!res.ok) throw await failure(res);
+}
+
 // 업로드할 파일 하나. path는 모델 폴더 안 경로(폴더명/...) 또는 데이터 · 학습 코드 파일 이름이다.
 export interface UploadFile {
   path: string;
