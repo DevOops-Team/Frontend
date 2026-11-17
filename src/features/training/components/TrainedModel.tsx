@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Icon } from '@/shared/ui/Icon';
-import { ApiError, errorMessage, getTrainedModel, modelArchiveUrl, modelFileUrl } from '../api';
+import { ApiError, errorMessage, getTrainedModel, modelFileUrl } from '../api';
 import { formatBytes, formatDateTime } from '../lib/format';
 import type { Job, TrainedModel } from '../types';
 
 // 학습 완료 모델: 학습이 끝난(SUCCEEDED) 작업의 마지막 승인 체크포인트를 보여 주고 내려받게 한다.
-// 상태 4가지: 학습 중(빈 상태) · 불러오는 중 · 오류(다시 시도) · 완료(전체 zip + 파일별 내려받기).
+// 상태 4가지: 학습 중(빈 상태) · 불러오는 중 · 오류(다시 시도) · 완료(파일별 내려받기, S3에서 직접).
 
 type Loaded = { id: string; model: TrainedModel | null; error: string; missing: boolean };
 
@@ -51,7 +51,6 @@ export function TrainedModelPanel({ job }: { job: Job }) {
     body = <>
       <div className="model-lead">
         <p className="model-step"><span>마지막 체크포인트</span><strong className="num">step {model.step.toLocaleString()}</strong><time className="num" dateTime={model.approvedAt}>{formatDateTime(model.approvedAt)} 승인</time></p>
-        <a className="key key--primary" href={modelArchiveUrl(job.id)} download><Icon name="download" size={18} />모델 내려받기</a>
       </div>
       <dl className="metrics">
         <div><dt>크기</dt><dd className="num">{formatBytes(model.sizeBytes)}</dd></div>
@@ -60,11 +59,12 @@ export function TrainedModelPanel({ job }: { job: Job }) {
         <div><dt>세대</dt><dd className="num">{model.generation}</dd></div>
       </dl>
       <h3 className="files-head">파일 {model.files.length}개</h3>
+      {model.files.length > 1 && <p className="muted model-note">체크포인트는 모든 파일을 한 폴더에 받아야 불러올 수 있습니다.</p>}
       <ul className="file-list" aria-label="모델 파일">{model.files.map((f) => <li key={f.name}>
         <div className="file-row">
           <span className="file-name" title={`${f.name}\nsha256 ${f.sha256}`}>{f.name}</span>
           <span className="muted num">{formatBytes(f.size)}</span>
-          <a className="link" href={modelFileUrl(job.id, f.name)} download aria-label={`${f.name} 내려받기`}>내려받기</a>
+          <a className="link" href={modelFileUrl(job.id, f.name)} download aria-label={`${f.name} 내려받기`}><Icon name="download" size={16} />내려받기</a>
         </div>
       </li>)}</ul>
     </>;

@@ -41,12 +41,13 @@ describe('TrainedModelPanel (GPU-190)', () => {
     expect(screen.getByText(/내려받을 모델이 없습니다/)).toBeInTheDocument();
   });
 
-  it('shows the final checkpoint with a zip link and one link per file', async () => {
+  it('shows the final checkpoint with one download link per file', async () => {
     const fetchMock = respond({ status: 200, body: trained });
     render(<TrainedModelPanel job={job({})} />);
     expect(await screen.findByText('step 694')).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith('/api/jobs/0cb3b0c3/model');
-    expect(screen.getByRole('link', { name: /모델 내려받기/ })).toHaveAttribute('href', '/api/jobs/0cb3b0c3/model/archive');
+    expect(screen.queryByRole('link', { name: /모델 내려받기/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/모든 파일을 한 폴더에/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '__0_0.distcp 내려받기' })).toHaveAttribute('href', '/api/jobs/0cb3b0c3/model/files/__0_0.distcp');
     expect(screen.getByText('3.00 GB')).toBeInTheDocument();
   });
