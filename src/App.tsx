@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AlertDialog } from '@astryxdesign/core/AlertDialog';
 import { AppShell } from '@astryxdesign/core/AppShell';
 import { Badge } from '@astryxdesign/core/Badge';
 import { Banner } from '@astryxdesign/core/Banner';
@@ -9,12 +10,12 @@ import { HStack, Layout, LayoutContent, LayoutHeader, StackItem, VStack } from '
 import { ProgressBar } from '@astryxdesign/core/ProgressBar';
 import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';
 import { SideNav, SideNavItem, SideNavSection } from '@astryxdesign/core/SideNav';
-import { Table, pixel, proportional } from '@astryxdesign/core/Table';
+import { Table, TableSelectionToolbar, pixel, proportional, useTableSelection, useTableSelectionState } from '@astryxdesign/core/Table';
 import { Heading, Text } from '@astryxdesign/core/Text';
 import { Theme } from '@astryxdesign/core/theme';
 import { neutralTheme } from '@astryxdesign/theme-neutral/built';
 import { useTheme } from '@/features/theme';
-import { CreatePipeline, JOB_LIST_POLL_MS, RunPage, STATUS_LABEL, UPLOAD_LABEL, UploadPage, errorMessage, isUploadActive, listJobs, runProgress, uiState, uploadStats, uploadUiState, useUploads, type Job, type PendingUpload } from '@/features/training';
+import { CreatePipeline, JOB_LIST_POLL_MS, RunPage, STATUS_LABEL, UPLOAD_LABEL, UploadPage, deleteJob, deleteJobs, errorMessage, isDeletable, isUploadActive, listJobs, runProgress, uiState, uploadStats, uploadUiState, useUploads, type Job, type PendingUpload } from '@/features/training';
 import { formatBytes } from '@/features/training/lib/format';
 import { Icon } from '@/shared/ui/Icon';
 import { ChipIcon, DocIcon, GridIcon } from '@/shared/ui/navIcons';
@@ -48,7 +49,7 @@ function RowProgress({ job }: { job: Job }) {
   </HStack>;
 }
 
-function Overview({ jobs, pending, listError, open }: { jobs: Job[]; pending: PendingUpload[]; listError: string; open: (view: string) => void }) {
+function Overview({ jobs, pending, listError, open, reload }: { jobs: Job[]; pending: PendingUpload[]; listError: string; open: (view: string) => void; reload: () => void }) {
   const count = (...statuses: Job['status'][]) => jobs.filter((j) => statuses.includes(j.status)).length;
   // 올리는 중인 학습을 맨 위에. 제출이 끝난(done) 업로드는 실제 학습 줄로 대신한다.
   const shown = useMemo(() => pending.filter((u) => u.state !== 'done'), [pending]);
@@ -57,6 +58,31 @@ function Overview({ jobs, pending, listError, open }: { jobs: Job[]; pending: Pe
     ...jobs.map((j): Row => ({ kind: 'job', id: j.id, name: j.name, strategy: j.strategy, gpus: j.gpus, job: j })),
   ], [shown, jobs]);
   const uploading = shown.filter((u) => isUploadActive(u.state)).length;
+
+  // 선택 삭제 (GPU-196). 끝난 학습만 고를 수 있고, 진행 중인 학습은 체크박스가 꺼져 있다. 업로드 줄은 업로드 상세에서 취소 · 지운다.
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteNotice, setDeleteNotice] = useState<{ deleted: number; failed: { name: string; message: string }[] } | null>(null);
+  const selectable = (r: Row) => r.kind === 'job';
+  const enabled = (r: Row) => r.kind === 'job' && isDeletable(r.job.status);
+  const { selectionConfig, selectionState } = useTableSelectionState<Row>({
+    data: rows, idKey: 'id', getIsItemSelectable: selectable, getIsItemEnabled: enabled, selectedKeys, setSelectedKeys,
+  });
+  const selection = useTableSelection<Row>({ ...selectionConfig, getIsItemSelectable: selectable, getIsItemEnabled: enabled, getRowLabel: (r) => `${r.name} 선택` });
+  const plugins = useMemo(() => ({ selection }), [selection]);
+  const targets = jobs.filter((j) => selectedKeys.has(j.id) && isDeletable(j.status));
+  const nameOf = (id: string) => jobs.find((j) => j.id === id)?.name ?? id;
+
+  async function removeSelected() {
+    setDeleting(true);
+    const result = await deleteJobs(targets.map((j) => j.id), deleteJob);
+    setDeleting(false);
+    setConfirming(false);
+    setSelectedKeys((prev) => new Set([...prev].filter((k) => !result.deleted.includes(k))));
+    setDeleteNotice({ deleted: result.deleted.length, failed: result.failed.map((f) => ({ name: nameOf(f.id), message: f.message })) });
+    reload();
+  }
   const columns = useMemo(() => [
     { key: 'name', header: '학습 이름', width: proportional(2, { minWidth: 160 }), renderCell: (r: Row) => <Button label={r.name} variant="ghost" size="sm" onClick={() => open(r.id)} /> },
     { key: 'strategy', header: '방식', width: pixel(96), renderCell: (r: Row) => <Badge variant="neutral" label={r.strategy.toUpperCase()} /> },
@@ -66,7 +92,7 @@ function Overview({ jobs, pending, listError, open }: { jobs: Job[]; pending: Pe
     { key: 'detail', header: '', width: pixel(110), align: 'end' as const, renderCell: (r: Row) => <Button label={r.kind === 'upload' ? '업로드 보기' : '상세 보기'} aria-label={`${r.name} ${r.kind === 'upload' ? '업로드' : '상세'} 보기`} variant="secondary" size="sm" onClick={() => open(r.id)} /> },
   ], [open]);
 
-  return <Layout
+  return <><Layout
     height="fill"
     contentWidth={1200}
     header={<LayoutHeader hasDivider>
@@ -83,6 +109,10 @@ function Overview({ jobs, pending, listError, open }: { jobs: Job[]; pending: Pe
     content={<LayoutContent>
       <VStack gap={6}>
         {listError && <Banner status="error" role="alert" title="학습 목록을 불러오지 못했습니다" description={listError} />}
+        {deleteNotice && deleteNotice.failed.length === 0 && <Banner status="success" title={`학습 ${deleteNotice.deleted}개를 삭제했습니다`} description="최종 모델과 체크포인트, 올린 파일을 S3에서 모두 지웠습니다." onDismiss={() => setDeleteNotice(null)} />}
+        {deleteNotice && deleteNotice.failed.length > 0 && <Banner status="error" role="alert"
+          title={`${deleteNotice.failed.length}개를 삭제하지 못했습니다${deleteNotice.deleted > 0 ? ` (${deleteNotice.deleted}개는 삭제함)` : ''}`}
+          description={deleteNotice.failed.map((f) => `${f.name}: ${f.message}`).join(' · ')} onDismiss={() => setDeleteNotice(null)} />}
         <Grid columns={{ minWidth: 200 }} gap={4}>
           <Card padding={4}><VStack gap={2}><Text type="supporting">전체 학습</Text><Text type="display-2" hasTabularNumbers>{rows.length}</Text></VStack></Card>
           <Card padding={4}><VStack gap={2}><Text type="supporting">완료한 학습</Text><Text type="display-2" hasTabularNumbers>{count('SUCCEEDED')}</Text></VStack></Card>
@@ -90,13 +120,29 @@ function Overview({ jobs, pending, listError, open }: { jobs: Job[]; pending: Pe
         </Grid>
         <VStack gap={3}>
           <HStack vAlign="center"><StackItem size="fill"><Heading level={2}>내 학습</Heading></StackItem><Text type="supporting" hasTabularNumbers>총 {rows.length}개{uploading > 0 ? ` · S3 업로드 중 ${uploading}개` : ''}</Text></HStack>
+          {selectionState.hasSelection
+            ? <TableSelectionToolbar selection={selectionState} label="선택한 학습" clearLabel="선택 해제" renderSelectionLabel={(n) => `${n}개 선택됨`}
+              startContent={<Button label="선택 삭제" variant="destructive" size="sm" icon={<Icon name="cross" size={16} />} isDisabled={targets.length === 0} onClick={() => setConfirming(true)} />} />
+            : <Text type="supporting">끝난 학습(성공 · 실패 · 취소됨)을 골라 삭제할 수 있습니다. 진행 중인 학습은 먼저 중지해야 합니다.</Text>}
           <Card padding={0}>
-            <Table<Row> data={rows} columns={columns} idKey="id" density="balanced" hasHover />
+            <Table<Row> data={rows} columns={columns} idKey="id" density="balanced" hasHover plugins={plugins} />
           </Card>
         </VStack>
       </VStack>
     </LayoutContent>}
-  />;
+    />
+    <AlertDialog
+      isOpen={confirming}
+      onOpenChange={(open) => { if (!deleting) setConfirming(open); }}
+      title={`학습 ${targets.length}개를 영구 삭제할까요?`}
+      description={`${targets.map((j) => j.name).join(', ')}의 학습 완료 모델과 모든 체크포인트, 올린 모델 · 데이터 · 학습 코드가 S3에서 모든 버전까지 지워집니다. 되돌릴 수 없습니다.`}
+      cancelLabel="취소"
+      actionLabel="영구 삭제"
+      actionVariant="destructive"
+      isActionLoading={deleting}
+      onAction={() => { void removeSelected(); }}
+    />
+  </>;
 }
 
 export function App() {
@@ -108,6 +154,8 @@ export function App() {
   // 업로드가 끝나 학습이 만들어지면 목록을 바로 다시 읽는다.
   const submitted = pending.filter((u) => u.state === 'done').length;
   const goHome = useCallback(() => setView('home'), []);
+  const [refresh, setRefresh] = useState(0);
+  const reload = useCallback(() => setRefresh((n) => n + 1), []);
 
   useEffect(() => {
     if (view !== 'home') return undefined;
@@ -116,7 +164,7 @@ export function App() {
     void load();
     const timer = setInterval(() => { void load(); }, JOB_LIST_POLL_MS);
     return () => { live = false; clearInterval(timer); };
-  }, [view, submitted]);
+  }, [view, submitted, refresh]);
 
   const sideNav = <SideNav
     aria-label="주 메뉴"
@@ -140,7 +188,7 @@ export function App() {
       {view === 'create' ? <CreatePipeline onSubmitted={(key) => setView(uploadView(key))} onCancel={goHome} />
         : view.startsWith(UPLOAD_VIEW) ? <UploadPage key={view} uploadKey={view.slice(UPLOAD_VIEW.length)} onBack={goHome} onCreated={setView} />
           : view !== 'home' ? <RunPage key={view} id={view} onBack={goHome} />
-            : <Overview jobs={jobs} pending={pending} listError={listError} open={setView} />}
+            : <Overview jobs={jobs} pending={pending} listError={listError} open={setView} reload={reload} />}
     </AppShell>
   </Theme>;
 }

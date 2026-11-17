@@ -5,6 +5,7 @@ export { RunPage } from './components/RunOverview';
 export { UploadPage } from './components/UploadPage';
 export { uploads, useUploads } from './uploads';
 export { UPLOAD_LABEL, isActive as isUploadActive, uploadStats, uploadUiState, type PendingUpload } from './lib/uploadQueue';
-export { JOB_LIST_POLL_MS, errorMessage, listJobs } from './api';
+export { JOB_LIST_POLL_MS, deleteJob, errorMessage, listJobs } from './api';
+export { deleteJobs, isDeletable } from './lib/deletion';
 export { STATUS_LABEL, runProgress, uiState } from './lib/progress';
 export type { CreatedJob, Job, JobEvent, JobFile, TrainConfig, TrainingOptions } from './types';
