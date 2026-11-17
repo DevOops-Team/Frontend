@@ -7,3 +7,9 @@
 /* The shell owns scrolling: AppShell height="fill" scrolls each Layout region inside the viewport. */
 html, body, #root { height: 100%; }
 body { word-break: keep-all; }
+
+.strategy-card { position: relative; }
+.strategy-card-input { position: absolute; inline-size: 1px; block-size: 1px; clip-path: inset(50%); }
+.strategy-card-hit-area { position: absolute; inset: 0; cursor: pointer; }
+.strategy-card:has(.strategy-card-input:checked) { box-shadow: inset 0 0 0 2px var(--color-accent); border-color: var(--color-accent); }
+.strategy-card:has(.strategy-card-input:focus-visible) { outline: 2px solid var(--color-accent); outline-offset: 2px; }

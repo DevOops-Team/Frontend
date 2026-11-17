@@ -61,7 +61,7 @@ export function TrainedModelPanel({ job }: { job: Job }) {
       <HStack gap={3} vAlign="end" wrap="wrap">
         <Text type="supporting">마지막 체크포인트</Text>
         <Text type="large" weight="semibold" hasTabularNumbers>{`step ${model.step.toLocaleString()}`}</Text>
-        <Text type="supporting" hasTabularNumbers>{formatDateTime(model.approvedAt)} 승인</Text>
+        <Text type="supporting" hasTabularNumbers><time dateTime={model.approvedAt}>{formatDateTime(model.approvedAt)} 승인</time></Text>
       </HStack>
       <MetadataList columns={4}>
         <MetadataListItem label="크기">{formatBytes(model.sizeBytes)}</MetadataListItem>
@@ -73,7 +73,7 @@ export function TrainedModelPanel({ job }: { job: Job }) {
         <Heading level={3}>파일 {model.files.length}개</Heading>
         {model.files.length > 1 && <Text type="supporting">체크포인트는 모든 파일을 한 폴더에 받아야 불러올 수 있습니다.</Text>}
         <List density="compact" hasDividers aria-label="모델 파일">{model.files.map((f) => <ListItem key={f.name}
-          label={<Text type="code" maxLines={1}>{f.name}</Text>}
+          label={<Text type="code" maxLines={1}><span title={`${f.name}\nsha256 ${f.sha256}`}>{f.name}</span></Text>}
           description={<Text type="supporting" hasTabularNumbers>{formatBytes(f.size)}</Text>}
           endContent={<Link href={modelFileUrl(job.id, f.name)} label={`${f.name} 내려받기`} download><HStack gap={1} vAlign="center"><Icon name="download" size={16} />내려받기</HStack></Link>} />)}
         </List>

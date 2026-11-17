@@ -23,7 +23,7 @@ function PreviewBody({ name, preview, error, loading }: { name: string; preview:
     {error && <Banner status="error" role="alert" title="미리보기를 불러오지 못했습니다" description={error} />}
     {loading && !preview && !error && <HStack gap={2} vAlign="center"><Spinner size="sm" /><Text color="secondary">불러오는 중입니다.</Text></HStack>}
     {preview && <>
-      <CodeBlock code={preview.text} language={LANGUAGE[name.split('.').pop() ?? ''] ?? 'text'} width="100%" maxHeight="60vh" hasLineNumbers isWrapped />
+      <CodeBlock code={preview.text} language={LANGUAGE[name.split('.').pop()?.toLowerCase() ?? ''] ?? 'text'} width="100%" maxHeight="60vh" tabIndex={0} hasLineNumbers isWrapped />
       {preview.truncated && <Text type="supporting">전체 {formatBytes(preview.totalSize)} 중 앞부분만 보여 줍니다.</Text>}
     </>}
   </VStack>;
@@ -37,7 +37,7 @@ function FileRow({ name, size, load, mode, label }: { name: string; size: number
 
   async function show() {
     setOpen(true);
-    if (preview) return;
+    if (preview || loading) return;
     setLoading(true);
     setError('');
     try {
@@ -52,12 +52,12 @@ function FileRow({ name, size, load, mode, label }: { name: string; size: number
   const body = <PreviewBody name={name} preview={preview} error={error} loading={loading} />;
   const inlineOpen = mode === 'inline' && open;
   const action = TEXT_FILE.test(name)
-    ? <Button label={inlineOpen ? '닫기' : '미리보기'} variant="ghost" size="sm" tooltip={`${name} 미리보기`} onClick={() => { if (inlineOpen) setOpen(false); else void show(); }} />
+    ? <Button label={inlineOpen ? '닫기' : '미리보기'} variant="ghost" size="sm" aria-label={`${name} 미리보기`} aria-expanded={mode === 'inline' ? open : undefined} aria-haspopup={mode === 'modal' ? 'dialog' : undefined} tooltip={`${name} 미리보기`} onClick={() => { if (inlineOpen) setOpen(false); else void show(); }} />
     : undefined;
   return <>
-    <ListItem label={<Text type="code" maxLines={1}>{name}</Text>} description={<Text type="supporting" hasTabularNumbers>{formatBytes(size)}</Text>} endContent={action} />
+    <ListItem label={<Text type="code" maxLines={1}><span title={name}>{name}</span></Text>} description={<Text type="supporting" hasTabularNumbers>{formatBytes(size)}</Text>} endContent={action} />
     {inlineOpen && body}
-    {mode === 'modal' && <Dialog isOpen={open} onOpenChange={setOpen} width={880}>
+    {mode === 'modal' && <Dialog purpose="info" isOpen={open} onOpenChange={setOpen} width={880}>
       <Layout
         header={<DialogHeader title={name} subtitle={`${label}, ${formatBytes(size)}`} onOpenChange={setOpen} />}
         content={<LayoutContent padding={4}>{body}</LayoutContent>}

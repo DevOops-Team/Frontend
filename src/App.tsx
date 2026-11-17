@@ -42,7 +42,7 @@ function Overview({ jobs, listError, open }: { jobs: Job[]; listError: string; o
     { key: 'gpus', header: '사용 GPU', width: pixel(96), renderCell: (j: JobRow) => <Text hasTabularNumbers>{j.gpus}개</Text> },
     { key: 'progress', header: '진행', width: proportional(2, { minWidth: 200 }), renderCell: (j: JobRow) => <RowProgress job={j} /> },
     { key: 'status', header: '상태', width: pixel(120), renderCell: (j: JobRow) => <StateBadge state={uiState(j.status)} label={STATUS_LABEL[j.status]} /> },
-    { key: 'detail', header: '', width: pixel(110), align: 'end' as const, renderCell: (j: JobRow) => <Button label="상세 보기" variant="secondary" size="sm" onClick={() => open(j.id)} /> },
+    { key: 'detail', header: '', width: pixel(110), align: 'end' as const, renderCell: (j: JobRow) => <Button label="상세 보기" aria-label={`${j.name} 상세 보기`} variant="secondary" size="sm" onClick={() => open(j.id)} /> },
   ], [open]);
 
   return <Layout
@@ -95,7 +95,7 @@ export function App() {
 
   const sideNav = <SideNav
     aria-label="주 메뉴"
-    header={<HStack gap={2} vAlign="center" paddingInline={2}><Icon name="layers" size={22} /><Heading level={3}>DevOops</Heading></HStack>}
+    header={<HStack paddingInline={2}><Button label="DevOops" variant="ghost" icon={<Icon name="layers" size={22} />} onClick={() => setView('home')}><Text type="large" weight="semibold">DevOops</Text></Button></HStack>}
     footer={<VStack gap={3} paddingInline={2}>
       <SegmentedControl label="화면 모드" value={theme} onChange={(v) => setTheme(v === 'dark' ? 'dark' : 'light')} size="sm" layout="fill">
         <SegmentedControlItem value="light" label="화이트" />
@@ -106,7 +106,7 @@ export function App() {
     <SideNavSection title="워크스페이스">
       <SideNavItem label="개요" icon={GridIcon} isSelected={view === 'home'} onClick={() => setView('home')} />
       <SideNavItem label="학습 실행" icon={ChipIcon} isSelected={view !== 'home'} onClick={() => setView('create')} />
-      <SideNavItem label="API 문서" icon={DocIcon} href="/swagger/" />
+      <SideNavItem label="API 문서" icon={DocIcon} href="/swagger/" {...{ target: '_blank', rel: 'noreferrer' }} />
     </SideNavSection>
   </SideNav>;
 

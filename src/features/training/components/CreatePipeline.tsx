@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Badge } from '@astryxdesign/core/Badge';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Button } from '@astryxdesign/core/Button';
@@ -12,7 +12,6 @@ import { HStack, Layout, LayoutContent, LayoutFooter, LayoutHeader, LayoutPanel,
 import { List, ListItem } from '@astryxdesign/core/List';
 import { MetadataList, MetadataListItem } from '@astryxdesign/core/MetadataList';
 import { ProgressBar } from '@astryxdesign/core/ProgressBar';
-import { SelectableCard } from '@astryxdesign/core/SelectableCard';
 import { Selector } from '@astryxdesign/core/Selector';
 import { Spinner } from '@astryxdesign/core/Spinner';
 import { Step, Stepper } from '@astryxdesign/core/Stepper';
@@ -62,6 +61,7 @@ export function CreatePipeline({ onCreated, onCancel }: { onCreated: (id: string
   const [sent, setSent] = useState<{ loaded: number; total: number } | null>(null);
   const upload = useRef<Upload | null>(null);
   const folderInput = useRef<HTMLInputElement>(null);
+  const strategyGroup = useId();
   const isWide = useMediaQuery('(min-width: 1100px)');
 
   useEffect(() => {
@@ -194,13 +194,26 @@ export function CreatePipeline({ onCreated, onCancel }: { onCreated: (id: string
         <MetadataListItem label="모델, 데이터"><Text type="code">DATA_DIR/model  DATA_DIR/data</Text></MetadataListItem>
         <MetadataListItem label="체크포인트"><Text type="code">CKPT_DIR</Text></MetadataListItem>
       </MetadataList>
+      {train?.upload && <Text type="supporting">{formatBytes(train.upload.file.size)}, train.py로 저장</Text>}
     </VStack>}
     {step === 3 && <VStack gap={4}>
       <VStack gap={1}><Heading level={2}>학습 방식과 GPU를 선택하세요</Heading><Text color="secondary">큰 모델은 FSDP, GPU 한 장에 들어가는 모델은 DDP를 고르세요.</Text></VStack>
-      <Grid columns={{ minWidth: 240 }} gap={3}>{(options?.strategies ?? []).map((s) => { const t = STRATEGY_TEXT[s.name] ?? strategyText; return <SelectableCard key={s.name} label={s.name.toUpperCase()} isSelected={strategy === s.name} onChange={(on) => { if (on) chooseStrategy(s.name); }} padding={4}>
-        <VStack gap={2}><HStack gap={2} vAlign="center"><Heading level={3}>{s.name.toUpperCase()}</Heading><Badge variant="neutral" label={t.tag} /></HStack><Text weight="medium">{t.title}</Text><Text type="supporting">{t.body}</Text></VStack>
-      </SelectableCard>; })}</Grid>
-      <Selector label="총 GPU 개수 (노드당 1개)" value={String(gpus)} onChange={(v) => setGpus(Number(v))} width={320} options={gpuOptions.map(({ n, reason }) => ({ value: String(n), label: `${n}개`, description: reason || undefined, disabled: Boolean(reason) }))} />
+      <Grid columns={{ minWidth: 240 }} gap={3} role="radiogroup" aria-label="학습 방식">
+        {(options?.strategies ?? []).map((s, i) => {
+          const text = STRATEGY_TEXT[s.name] ?? strategyText;
+          const id = `${strategyGroup}-${i}`;
+          return <Card key={s.name} className="strategy-card" padding={4}>
+            <input id={id} className="strategy-card-input" type="radio" name={strategyGroup} checked={strategy === s.name}
+              aria-label={s.name.toUpperCase()} aria-describedby={`${id}-description`} onChange={() => chooseStrategy(s.name)} />
+            <label className="strategy-card-hit-area" htmlFor={id} />
+            <VStack gap={2}>
+              <HStack gap={2} vAlign="center"><Heading level={3}>{s.name.toUpperCase()}</Heading><Badge variant="neutral" label={text.tag} /></HStack>
+              <VStack gap={2} id={`${id}-description`}><Text weight="medium">{text.title}</Text><Text type="supporting">{text.body}</Text></VStack>
+            </VStack>
+          </Card>;
+        })}
+      </Grid>
+      <Selector label="총 GPU 개수 (노드당 1개)" value={String(gpus)} onChange={(v) => setGpus(Number(v))} width={320} options={gpuOptions.map(({ n, reason }) => ({ value: String(n), label: `${n}개${reason ? ` (${reason})` : ''}`, disabled: Boolean(reason) }))} />
       <Collapsible trigger={<Text weight="medium">상세 설정</Text>} isOpen={advancedOpen} onOpenChange={setAdvancedOpen}>
         <VStack gap={3} paddingBlockStart={2}>
           <Text type="supporting">비워 두면 기본값으로 학습합니다.</Text>
