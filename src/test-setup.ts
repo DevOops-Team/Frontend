@@ -7,3 +7,7 @@ afterEach(() => cleanup());
 
 // jsdom은 scrollTo를 구현하지 않는다(화면 전환 때 맨 위로 올리는 호출).
 window.scrollTo = () => {};
+
+// jsdom은 <dialog>의 showModal · close를 구현하지 않는다(Astryx Dialog · AlertDialog).
+HTMLDialogElement.prototype.showModal ??= function showModal(this: HTMLDialogElement) { this.open = true; };
+HTMLDialogElement.prototype.close ??= function close(this: HTMLDialogElement) { this.open = false; this.dispatchEvent(new Event('close')); };

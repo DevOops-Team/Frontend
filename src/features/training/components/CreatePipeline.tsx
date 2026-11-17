@@ -11,18 +11,18 @@ import { useMediaQuery } from '@astryxdesign/core/hooks';
 import { HStack, Layout, LayoutContent, LayoutFooter, LayoutHeader, LayoutPanel, StackItem, VStack } from '@astryxdesign/core/Layout';
 import { List, ListItem } from '@astryxdesign/core/List';
 import { MetadataList, MetadataListItem } from '@astryxdesign/core/MetadataList';
-import { ProgressBar } from '@astryxdesign/core/ProgressBar';
 import { Selector } from '@astryxdesign/core/Selector';
 import { Spinner } from '@astryxdesign/core/Spinner';
 import { Step, Stepper } from '@astryxdesign/core/Stepper';
 import { Heading, Text } from '@astryxdesign/core/Text';
 import { TextInput } from '@astryxdesign/core/TextInput';
-import { buildSpec, createJob, errorMessage, getOptions, type Upload, type UploadFile } from '../api';
+import { buildSpec, errorMessage, getOptions, type UploadFile } from '../api';
 import type { TrainingOptions } from '../types';
 import { formatBytes } from '../lib/format';
 import { parseHyperparameters, rangeText } from '../lib/hyperparameters';
 import { Icon } from '@/shared/ui/Icon';
 import { checkpointInterval, formatDuration, pickData, pickModel, pickTrain, type PickedFile } from '../lib/upload';
+import { uploads } from '../uploads';
 
 const NAME = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 const STRATEGY_TEXT: Record<string, { tag: string; title: string; body: string; choice: string }> = {
@@ -45,7 +45,8 @@ function toPicked(list: FileList | File | File[] | null, relative: boolean): { p
 }
 
 // 로컬의 Hugging Face 모델 폴더, jsonl 학습 데이터, 학습 코드(train.py)를 골라 설정과 함께 올린다.
-export function CreatePipeline({ onCreated, onCancel }: { onCreated: (id: string) => void; onCancel: () => void }) {
+// 업로드는 앱 단위 큐(uploads)가 맡는다. 제출하면 바로 업로드 상세로 넘어가고, 다른 화면으로 가도 계속 올린다 (GPU-195).
+export function CreatePipeline({ onSubmitted, onCancel }: { onSubmitted: (uploadKey: string) => void; onCancel: () => void }) {
   const [options, setOptions] = useState<TrainingOptions | null>(null);
   const [loadError, setLoadError] = useState('');
   const [name, setName] = useState('');
@@ -58,8 +59,6 @@ export function CreatePipeline({ onCreated, onCancel }: { onCreated: (id: string
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [step, setStep] = useState(0);
   const [issue, setIssue] = useState('');
-  const [sent, setSent] = useState<{ loaded: number; total: number } | null>(null);
-  const upload = useRef<Upload | null>(null);
   const folderInput = useRef<HTMLInputElement>(null);
   const strategyGroup = useId();
   const isWide = useMediaQuery('(min-width: 1100px)');
@@ -72,7 +71,7 @@ export function CreatePipeline({ onCreated, onCancel }: { onCreated: (id: string
       setStrategy(o.defaultStrategy);
       setGpus(o.gpus.default);
     }).catch((e: unknown) => { if (live) setLoadError(errorMessage(e)); });
-    return () => { live = false; upload.current?.abort(); };
+    return () => { live = false; };
   }, []);
 
   const limits = options?.limits ?? { maxModelBytes: 0, maxDataBytes: 0, maxTrainBytes: 0, maxFiles: 0 };
@@ -116,21 +115,16 @@ export function CreatePipeline({ onCreated, onCancel }: { onCreated: (id: string
     if (options && gpus < needed) setGpus(options.gpus.options.find((n) => n >= needed && n <= options.gpus.max) ?? options.gpus.default);
   }
 
-  async function submit() {
+  function submit() {
     if (!model || !data || !train?.upload) return;
     setIssue('');
-    setSent({ loaded: 0, total: 1 });
-    upload.current = createJob(buildSpec({ name, strategy, gpus }, parsed.values), model.uploads, data.uploads, train.upload,
-      (loaded, total) => setSent({ loaded, total }));
-    try {
-      const created = await upload.current.done;
-      onCreated(created.id);
-    } catch (e) {
-      setIssue(errorMessage(e));
-      setSent(null);
-    } finally {
-      upload.current = null;
-    }
+    onSubmitted(uploads.start({
+      name: name.trim() || `${model.pick.folder}-(자동)`,
+      spec: buildSpec({ name, strategy, gpus }, parsed.values),
+      model: { folder: model.pick.folder, files: model.uploads },
+      data: data.uploads,
+      train: train.upload,
+    }));
   }
 
   function next() {
@@ -143,13 +137,10 @@ export function CreatePipeline({ onCreated, onCancel }: { onCreated: (id: string
     if (step === 2 && (!train || train.pick.errors.length > 0)) { setIssue(train?.pick.errors.join(' ') ?? '학습 코드(.py) 파일 하나를 선택해 주세요.'); return; }
     if (step === 3 && parsed.errors.length > 0) { setAdvancedOpen(true); setIssue(parsed.errors.join(' ')); return; }
     if (step === 3 && fileCount > limits.maxFiles) { setIssue(`파일이 너무 많습니다 (최대 ${limits.maxFiles}개).`); return; }
-    if (step === 4) { void submit(); return; }
+    if (step === 4) { submit(); return; }
     setIssue('');
     setStep(step + 1);
   }
-
-  const uploading = sent !== null;
-  const percent = sent ? Math.min(100, Math.floor((sent.loaded / sent.total) * 100)) : 0;
 
   const STEPS = [
     { label: '모델', description: 'Hugging Face 폴더' },
@@ -222,7 +213,7 @@ export function CreatePipeline({ onCreated, onCancel }: { onCreated: (id: string
       </Collapsible>
     </VStack>}
     {step === 4 && <VStack gap={4}>
-      <VStack gap={1}><Heading level={2}>이 설정으로 학습을 시작할까요?</Heading><Text color="secondary">아래 설정으로 파일을 올리고 학습을 시작합니다.</Text></VStack>
+      <VStack gap={1}><Heading level={2}>이 설정으로 학습을 시작할까요?</Heading><Text color="secondary">파일을 S3로 올린 뒤 학습을 시작합니다. 올리는 동안 다른 화면으로 가도 되고, 개요의 학습 목록에서 진행을 확인하거나 취소할 수 있습니다.</Text></VStack>
       <MetadataList columns="multi">
         <MetadataListItem label="학습 이름">{name.trim() || `${model?.pick.folder ?? ''}-(자동)`}</MetadataListItem>
         <MetadataListItem label="방식, GPU">{strategy.toUpperCase()} · {gpus}개</MetadataListItem>
@@ -232,7 +223,6 @@ export function CreatePipeline({ onCreated, onCancel }: { onCreated: (id: string
         {ckpt ? <MetadataListItem label="체크포인트 간격">약 {formatDuration(ckpt.intervalSeconds)}마다</MetadataListItem> : null}
         <MetadataListItem label="상세 설정">{changed.length === 0 ? '기본값' : changed.map(([k, v]) => `${k} ${v}`).join(', ')}</MetadataListItem>
       </MetadataList>
-      {uploading && <ProgressBar label={percent < 100 ? `업로드 중 ${formatBytes(sent.loaded)} / ${formatBytes(sent.total)}` : '업로드 완료. 학습을 제출하는 중입니다.'} value={percent} hasValueLabel />}
     </VStack>}
     {problem && <Banner status="error" role="alert" title="진행할 수 없습니다" description={problem} />}
   </VStack>;
@@ -242,7 +232,7 @@ export function CreatePipeline({ onCreated, onCancel }: { onCreated: (id: string
     header={<LayoutHeader hasDivider>
       <VStack gap={4}>
         <Heading level={1}>새 학습 만들기</Heading>
-        <Stepper activeStep={step} label="새 학습 단계" onStepClick={uploading ? undefined : (i) => { if (i < step) { setIssue(''); setStep(i); } }}>
+        <Stepper activeStep={step} label="새 학습 단계" onStepClick={(i) => { if (i < step) { setIssue(''); setStep(i); } }}>
           {STEPS.map((s, i) => <Step key={s.label} step={i} label={s.label} description={s.description} isDisabled={i > step} />)}
         </Stepper>
       </VStack>
@@ -250,9 +240,9 @@ export function CreatePipeline({ onCreated, onCancel }: { onCreated: (id: string
     content={<LayoutContent label="단계 내용">{body}</LayoutContent>}
     footer={<LayoutFooter hasDivider>
       <HStack gap={2} vAlign="center">
-        <Button label={uploading ? '업로드 취소' : step === 0 ? '취소' : '이전'} variant="secondary" onClick={() => { if (uploading) { upload.current?.abort(); return; } if (step === 0) onCancel(); else { setIssue(''); setStep(step - 1); } }} />
+        <Button label={step === 0 ? '취소' : '이전'} variant="secondary" onClick={() => { if (step === 0) onCancel(); else { setIssue(''); setStep(step - 1); } }} />
         <StackItem size="fill" />
-        <Button label={['다음: 학습 데이터', '다음: 학습 코드', '다음: 학습 방식', '다음: 최종 확인', uploading ? '올리는 중…' : '업로드하고 학습 시작'][step]} variant="primary" isLoading={uploading} isDisabled={uploading} onClick={next} />
+        <Button label={['다음: 학습 데이터', '다음: 학습 코드', '다음: 학습 방식', '다음: 최종 확인', '업로드하고 학습 시작'][step]} variant="primary" onClick={next} />
       </HStack>
     </LayoutFooter>}
     end={isWide ? <LayoutPanel hasDivider width={300} label="실행 전 요약">
