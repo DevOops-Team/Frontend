@@ -1,4 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
+import { Badge } from '@astryxdesign/core/Badge';
+import { Banner } from '@astryxdesign/core/Banner';
+import { Button } from '@astryxdesign/core/Button';
+import { Card } from '@astryxdesign/core/Card';
+import { Collapsible } from '@astryxdesign/core/Collapsible';
+import { Field } from '@astryxdesign/core/Field';
+import { FileInput } from '@astryxdesign/core/FileInput';
+import { Grid } from '@astryxdesign/core/Grid';
+import { useMediaQuery } from '@astryxdesign/core/hooks';
+import { HStack, Layout, LayoutContent, LayoutFooter, LayoutHeader, LayoutPanel, StackItem, VStack } from '@astryxdesign/core/Layout';
+import { List, ListItem } from '@astryxdesign/core/List';
+import { MetadataList, MetadataListItem } from '@astryxdesign/core/MetadataList';
+import { ProgressBar } from '@astryxdesign/core/ProgressBar';
+import { SelectableCard } from '@astryxdesign/core/SelectableCard';
+import { Selector } from '@astryxdesign/core/Selector';
+import { Spinner } from '@astryxdesign/core/Spinner';
+import { Step, Stepper } from '@astryxdesign/core/Stepper';
+import { Heading, Text } from '@astryxdesign/core/Text';
+import { TextInput } from '@astryxdesign/core/TextInput';
 import { buildSpec, createJob, errorMessage, getOptions, type Upload, type UploadFile } from '../api';
 import type { TrainingOptions } from '../types';
 import { formatBytes } from '../lib/format';
@@ -14,10 +33,11 @@ const STRATEGY_TEXT: Record<string, { tag: string; title: string; body: string; 
 
 interface Chosen<T> { pick: T; uploads: UploadFile[] }
 
-function toPicked(list: FileList | null, relative: boolean): { picked: PickedFile[]; byPath: Map<string, File> } {
+function toPicked(list: FileList | File | File[] | null, relative: boolean): { picked: PickedFile[]; byPath: Map<string, File> } {
   const byPath = new Map<string, File>();
   const picked: PickedFile[] = [];
-  for (const f of Array.from(list ?? [])) {
+  const files = list instanceof File ? [list] : Array.from(list ?? []);
+  for (const f of files) {
     const path = relative && f.webkitRelativePath ? f.webkitRelativePath : f.name;
     byPath.set(path, f);
     picked.push({ path, size: f.size });
@@ -41,6 +61,8 @@ export function CreatePipeline({ onCreated, onCancel }: { onCreated: (id: string
   const [issue, setIssue] = useState('');
   const [sent, setSent] = useState<{ loaded: number; total: number } | null>(null);
   const upload = useRef<Upload | null>(null);
+  const folderInput = useRef<HTMLInputElement>(null);
+  const isWide = useMediaQuery('(min-width: 1100px)');
 
   useEffect(() => {
     let live = true;
@@ -67,21 +89,21 @@ export function CreatePipeline({ onCreated, onCancel }: { onCreated: (id: string
   const changed = Object.entries(parsed.values);
   const fileCount = (model?.pick.files.length ?? 0) + (data?.pick.files.length ?? 0) + (train?.upload ? 1 : 0);
 
-  function chooseModel(list: FileList | null) {
+  function chooseModel(list: FileList | File | File[] | null) {
     const { picked, byPath } = toPicked(list, true);
     const pick = pickModel(picked, limits);
     setModel({ pick, uploads: pick.files.map((f) => ({ path: f.path, file: byPath.get(f.path) as File })) });
     setIssue('');
   }
 
-  function chooseData(list: FileList | null) {
+  function chooseData(list: FileList | File | File[] | null) {
     const { picked, byPath } = toPicked(list, false);
     const pick = pickData(picked, limits);
     setData({ pick, uploads: pick.files.map((f) => ({ path: f.path, file: byPath.get(f.path) as File })) });
     setIssue('');
   }
 
-  function chooseTrain(list: FileList | null) {
+  function chooseTrain(list: FileList | File | File[] | null) {
     const { picked, byPath } = toPicked(list, false);
     const pick = pickTrain(picked, limits);
     setTrain({ pick, upload: pick.file ? { path: pick.file.path, file: byPath.get(pick.file.path) as File } : null });
@@ -129,57 +151,108 @@ export function CreatePipeline({ onCreated, onCancel }: { onCreated: (id: string
   const uploading = sent !== null;
   const percent = sent ? Math.min(100, Math.floor((sent.loaded / sent.total) * 100)) : 0;
 
-  return <>
-    <header className="create-head"><h1>새 학습 만들기</h1></header>
-    <div className="create-layout">
-      <section className="panel wizard" aria-label="새 학습 단계" data-grow={step === 3 && advancedOpen ? 'true' : undefined}>
-        <ol className="stepper">{['모델', '데이터', '학습 코드', '방식·GPU', '최종 확인'].map((label, i) => <li key={label} data-state={i === step ? 'current' : i < step ? 'done' : ''}><button type="button" disabled={i > step || uploading} aria-current={i === step ? 'step' : undefined} onClick={() => { setIssue(''); setStep(i); }}><span className="step-num">{i < step ? <Icon name="check" size={14} /> : i + 1}</span>{label}</button></li>)}</ol>
-        <div className="wizard-body">
-          {step === 0 && <section><h2>어떤 모델을 학습할까요?</h2><p className="muted">config.json이 들어 있는 Hugging Face 모델 폴더를 통째로 고르세요.</p>
-            <div className="form-grid"><label className="field"><span>학습 이름 (선택)</span><input aria-label="학습 이름" placeholder="예: gpt2-demo" value={name} onChange={(e) => setName(e.target.value)} /><span className="hint">소문자, 숫자, 하이픈. 비워 두면 폴더 이름</span></label>
-              <label className="field"><span>모델 폴더</span><input aria-label="모델 폴더" type="file" {...{ webkitdirectory: '', directory: '' }} multiple onChange={(e) => chooseModel(e.target.files)} /><span className="hint">최대 {formatBytes(limits.maxModelBytes)}</span></label>
-            </div>
-            {!options && !loadError && <p className="muted">설정을 불러오는 중입니다.</p>}
-            {model && model.pick.files.length > 0 && <div className="asset-box"><div className="asset-head"><strong>{model.pick.folder}</strong><span className="muted num">파일 {model.pick.files.length}개, {formatBytes(model.pick.bytes)}</span></div>
-              <ul className="asset-list">{model.pick.files.slice(0, 8).map((f) => <li key={f.path}><span>{f.path.slice(model.pick.folder.length + 1)}</span><span className="num">{formatBytes(f.size)}</span></li>)}{model.pick.files.length > 8 && <li><span>외 {model.pick.files.length - 8}개</span></li>}</ul></div>}
-          </section>}
-          {step === 1 && <section><h2>어떤 데이터로 학습할까요?</h2><p className="muted">한 줄에 <code>{'{"text": "..."}'}</code> 하나씩 담긴 .jsonl 파일을 고르세요.</p>
-            <div className="form-grid"><label className="field"><span>학습 데이터</span><input aria-label="학습 데이터" type="file" accept=".jsonl" multiple onChange={(e) => chooseData(e.target.files)} /><span className="hint">최대 {formatBytes(limits.maxDataBytes)}</span></label></div>
-            {data && data.pick.files.length > 0 && <div className="asset-box"><div className="asset-head"><strong>파일 {data.pick.files.length}개</strong><span className="muted num">{formatBytes(data.pick.bytes)}</span></div>
-              <ul className="asset-list">{data.pick.files.map((f) => <li key={f.path}><span>{f.path}</span><span className="num">{formatBytes(f.size)}</span></li>)}</ul></div>}
-          </section>}
-          {step === 2 && <section><h2>어떤 코드로 학습할까요?</h2><p className="muted">torchrun으로 실행할 학습 코드(.py) 파일 하나를 고르세요.</p>
-            <div className="form-grid"><label className="field"><span>학습 코드</span><input aria-label="학습 코드" type="file" accept=".py" onChange={(e) => chooseTrain(e.target.files)} /><span className="hint">최대 {formatBytes(limits.maxTrainBytes)}</span></label></div>
-            <dl className="env-list"><div><dt>실행 위치</dt><dd><code>/data/code/train.py</code></dd></div><div><dt>설정</dt><dd><code>TRAIN_CONFIG</code></dd></div><div><dt>모델, 데이터</dt><dd><code>DATA_DIR/model</code> <code>DATA_DIR/data</code></dd></div><div><dt>체크포인트</dt><dd><code>CKPT_DIR</code></dd></div></dl>
-            {train?.upload && <div className="asset-box"><div className="asset-head"><strong>{train.upload.path}</strong><span className="muted num">{formatBytes(train.upload.file.size)}, train.py로 저장</span></div></div>}
-          </section>}
-          {step === 3 && <section className="strategy-step"><h2>학습 방식과 GPU를 선택하세요</h2><p className="muted">큰 모델은 FSDP, GPU 한 장에 들어가는 모델은 DDP를 고르세요.</p>
-            <div className="choice-list" role="radiogroup" aria-label="학습 방식">{(options?.strategies ?? []).map((s) => { const t = STRATEGY_TEXT[s.name] ?? strategyText; return <label className="choice" key={s.name} data-selected={strategy === s.name}><input type="radio" name="strategy" checked={strategy === s.name} onChange={() => chooseStrategy(s.name)} /><span className="choice-title"><code>{s.name.toUpperCase()}</code><span className="tag">{t.tag}</span></span><strong>{t.title}</strong><span className="muted">{t.body}</span></label>; })}</div>
-            <div className="form-grid"><label className="field"><span>총 GPU 개수 (노드당 1개)</span><select aria-label="총 GPU 개수" value={gpus} onChange={(e) => setGpus(Number(e.target.value))}>{gpuOptions.map(({ n, reason }) => <option key={n} value={n} disabled={Boolean(reason)}>{n}개{reason ? ` (${reason})` : ''}</option>)}</select></label></div>
-            <div className="advanced-settings">
-              <button type="button" className="advanced-toggle" aria-expanded={advancedOpen} aria-controls="advanced-settings-body" onClick={() => setAdvancedOpen(!advancedOpen)}><span className="chevron" aria-hidden="true" />상세 설정</button>
-              {advancedOpen && <div id="advanced-settings-body" className="advanced-body"><p className="muted">비워 두면 기본값으로 학습합니다.</p>
-                <div className="form-grid">{options?.hyperparameters.map((h) => <label className="field" key={h.key}><span><code>{h.key}</code></span><input aria-label={h.key} type="text" inputMode="decimal" autoComplete="off" placeholder={h.default === null ? '없음' : String(h.default)} value={hyper[h.key] ?? ''} onChange={(e) => { setHyper({ ...hyper, [h.key]: e.target.value }); setIssue(''); }} /><span className="hint">{rangeText(h)}</span></label>)}</div></div>}
-            </div>
-          </section>}
-          {step === 4 && <section className="review-step"><h2>이 설정으로 학습을 시작할까요?</h2><p className="muted">아래 설정으로 파일을 올리고 학습을 시작합니다.</p>
-            <dl className="review-grid"><div><dt>학습 이름</dt><dd>{name.trim() || `${model?.pick.folder ?? ''}-(자동)`}</dd></div><div><dt>방식, GPU</dt><dd><code>{strategy.toUpperCase()}</code> <span className="num">{gpus}개</span></dd></div>
-              <div><dt>모델</dt><dd>{model?.pick.folder}<span className="dd-sub num">{formatBytes(model?.pick.bytes ?? 0)}</span></dd></div><div><dt>데이터</dt><dd className="num">파일 {data?.pick.files.length}개<span className="dd-sub">{formatBytes(data?.pick.bytes ?? 0)}</span></dd></div><div><dt>학습 코드</dt><dd>{train?.upload?.path}<span className="dd-sub num">{formatBytes(train?.upload?.file.size ?? 0)}</span></dd></div>
-              {ckpt && <div><dt>체크포인트 간격</dt><dd className="num">약 {formatDuration(ckpt.intervalSeconds)}마다</dd></div>}
-              <div><dt>상세 설정</dt><dd>{changed.length === 0 ? '기본값' : changed.map(([k, v]) => <span key={k} className="dd-sub"><code>{k}</code> {v}</span>)}</dd></div></dl>
-            {uploading && <div className="track" role="progressbar" aria-label="업로드 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ transform: `scaleX(${percent / 100})` }} /></div>}
-            {uploading && <p className="muted num">{percent < 100 ? `업로드 중 ${percent}%, ${formatBytes(sent.loaded)} / ${formatBytes(sent.total)}` : '업로드 완료. 학습을 제출하는 중입니다.'}</p>}
-          </section>}
-          {loadError && <p role="alert" className="issues">{loadError}</p>}
-          {issue && <p role="alert" className="issues">{issue}</p>}
-        </div>
-        <footer className="wizard-actions">
-          <button type="button" className="key" onClick={() => { if (uploading) { upload.current?.abort(); return; } if (step === 0) onCancel(); else { setIssue(''); setStep(step - 1); } }}>{uploading ? '업로드 취소' : step === 0 ? '취소' : '이전'}</button>
-          <button type="button" className="key key--primary" disabled={uploading} onClick={next}>{['다음: 학습 데이터', '다음: 학습 코드', '다음: 학습 방식', '다음: 최종 확인', uploading ? '올리는 중…' : '업로드하고 학습 시작'][step]}</button>
-        </footer>
-      </section>
-      <aside className="summary" aria-labelledby="summary-title"><h2 id="summary-title">실행 전 요약</h2><p className="muted">{strategyText.choice}</p>
-        <dl className="summary-list"><div><dt>학습 방식</dt><dd><code>{strategy.toUpperCase()}</code></dd></div><div><dt>전체 GPU</dt><dd className="num">{gpus}개</dd></div><div><dt>모델</dt><dd>{model?.pick.folder || '-'}</dd></div><div><dt>업로드</dt><dd className="num">{formatBytes((model?.pick.bytes ?? 0) + (data?.pick.bytes ?? 0) + (train?.upload?.file.size ?? 0))}</dd></div></dl></aside>
-    </div>
-  </>;
+  const STEPS = [
+    { label: '모델', description: 'Hugging Face 폴더' },
+    { label: '데이터', description: '.jsonl 파일' },
+    { label: '학습 코드', description: 'train.py' },
+    { label: '방식·GPU', description: 'FSDP 또는 DDP' },
+    { label: '최종 확인', description: '업로드하고 시작' },
+  ];
+  const problem = loadError || issue;
+
+  const body = <VStack gap={5}>
+    {step === 0 && <VStack gap={4}>
+      <VStack gap={1}><Heading level={2}>어떤 모델을 학습할까요?</Heading><Text color="secondary">config.json이 들어 있는 Hugging Face 모델 폴더를 통째로 고르세요.</Text></VStack>
+      <Grid columns={{ minWidth: 260 }} gap={4}>
+        <TextInput label="학습 이름" isOptional placeholder="예: gpt2-demo" value={name} onChange={(v) => setName(v)} description="소문자, 숫자, 하이픈. 비워 두면 폴더 이름" status={nameError ? { type: 'error', message: nameError } : undefined} />
+        <Field label="모델 폴더" inputID="model-folder" description={`최대 ${formatBytes(limits.maxModelBytes)}`}>
+          <HStack gap={2} vAlign="center">
+            <Button label="폴더 선택" variant="secondary" icon={<Icon name="layers" size={16} />} onClick={() => folderInput.current?.click()} />
+            <Text color="secondary" maxLines={1}>{model?.pick.folder || '선택한 폴더 없음'}</Text>
+          </HStack>
+          <input ref={folderInput} id="model-folder" aria-label="모델 폴더" type="file" hidden {...{ webkitdirectory: '', directory: '' }} multiple onChange={(e) => chooseModel(e.target.files)} />
+        </Field>
+      </Grid>
+      {!options && !loadError && <HStack gap={2} vAlign="center"><Spinner size="sm" /><Text color="secondary">설정을 불러오는 중입니다.</Text></HStack>}
+      {model && model.pick.files.length > 0 && <Card padding={0}>
+        <List density="compact" hasDividers header={<HStack paddingInline={4} paddingBlock={3} vAlign="center"><StackItem size="fill"><Text weight="medium">{model.pick.folder}</Text></StackItem><Text type="supporting" hasTabularNumbers>파일 {model.pick.files.length}개, {formatBytes(model.pick.bytes)}</Text></HStack>}>
+          {model.pick.files.slice(0, 8).map((f) => <ListItem key={f.path} label={<Text type="code">{f.path.slice(model.pick.folder.length + 1)}</Text>} endContent={<Text type="supporting" hasTabularNumbers>{formatBytes(f.size)}</Text>} />)}
+          {model.pick.files.length > 8 && <ListItem label={`외 ${model.pick.files.length - 8}개`} />}
+        </List>
+      </Card>}
+    </VStack>}
+    {step === 1 && <VStack gap={4}>
+      <VStack gap={1}><Heading level={2}>어떤 데이터로 학습할까요?</Heading><Text color="secondary">한 줄에 {'{"text": "..."}'} 하나씩 담긴 .jsonl 파일을 고르세요.</Text></VStack>
+      <FileInput label="학습 데이터" mode="dropzone" accept=".jsonl" isMultiple description={`최대 ${formatBytes(limits.maxDataBytes)}`} value={data?.uploads.map((u) => u.file as File) ?? []} onChange={(files) => chooseData(files)} />
+    </VStack>}
+    {step === 2 && <VStack gap={4}>
+      <VStack gap={1}><Heading level={2}>어떤 코드로 학습할까요?</Heading><Text color="secondary">torchrun으로 실행할 학습 코드(.py) 파일 하나를 고르세요.</Text></VStack>
+      <FileInput label="학습 코드" mode="dropzone" accept=".py" description={`최대 ${formatBytes(limits.maxTrainBytes)}`} value={(train?.upload?.file as File | undefined) ?? null} onChange={(file) => chooseTrain(file)} />
+      <MetadataList title="학습 Pod 안의 경로">
+        <MetadataListItem label="실행 위치"><Text type="code">/data/code/train.py</Text></MetadataListItem>
+        <MetadataListItem label="설정"><Text type="code">TRAIN_CONFIG</Text></MetadataListItem>
+        <MetadataListItem label="모델, 데이터"><Text type="code">DATA_DIR/model  DATA_DIR/data</Text></MetadataListItem>
+        <MetadataListItem label="체크포인트"><Text type="code">CKPT_DIR</Text></MetadataListItem>
+      </MetadataList>
+    </VStack>}
+    {step === 3 && <VStack gap={4}>
+      <VStack gap={1}><Heading level={2}>학습 방식과 GPU를 선택하세요</Heading><Text color="secondary">큰 모델은 FSDP, GPU 한 장에 들어가는 모델은 DDP를 고르세요.</Text></VStack>
+      <Grid columns={{ minWidth: 240 }} gap={3}>{(options?.strategies ?? []).map((s) => { const t = STRATEGY_TEXT[s.name] ?? strategyText; return <SelectableCard key={s.name} label={s.name.toUpperCase()} isSelected={strategy === s.name} onChange={(on) => { if (on) chooseStrategy(s.name); }} padding={4}>
+        <VStack gap={2}><HStack gap={2} vAlign="center"><Heading level={3}>{s.name.toUpperCase()}</Heading><Badge variant="neutral" label={t.tag} /></HStack><Text weight="medium">{t.title}</Text><Text type="supporting">{t.body}</Text></VStack>
+      </SelectableCard>; })}</Grid>
+      <Selector label="총 GPU 개수 (노드당 1개)" value={String(gpus)} onChange={(v) => setGpus(Number(v))} width={320} options={gpuOptions.map(({ n, reason }) => ({ value: String(n), label: `${n}개`, description: reason || undefined, disabled: Boolean(reason) }))} />
+      <Collapsible trigger={<Text weight="medium">상세 설정</Text>} isOpen={advancedOpen} onOpenChange={setAdvancedOpen}>
+        <VStack gap={3} paddingBlockStart={2}>
+          <Text type="supporting">비워 두면 기본값으로 학습합니다.</Text>
+          <Grid columns={{ minWidth: 200 }} gap={3}>{options?.hyperparameters.map((h) => <TextInput key={h.key} label={h.key} inputMode="decimal" autoComplete="off" placeholder={h.default === null ? '없음' : String(h.default)} value={hyper[h.key] ?? ''} description={rangeText(h)} onChange={(v) => { setHyper({ ...hyper, [h.key]: v }); setIssue(''); }} />)}</Grid>
+        </VStack>
+      </Collapsible>
+    </VStack>}
+    {step === 4 && <VStack gap={4}>
+      <VStack gap={1}><Heading level={2}>이 설정으로 학습을 시작할까요?</Heading><Text color="secondary">아래 설정으로 파일을 올리고 학습을 시작합니다.</Text></VStack>
+      <MetadataList columns="multi">
+        <MetadataListItem label="학습 이름">{name.trim() || `${model?.pick.folder ?? ''}-(자동)`}</MetadataListItem>
+        <MetadataListItem label="방식, GPU">{strategy.toUpperCase()} · {gpus}개</MetadataListItem>
+        <MetadataListItem label="모델">{model?.pick.folder} ({formatBytes(model?.pick.bytes ?? 0)})</MetadataListItem>
+        <MetadataListItem label="데이터">파일 {data?.pick.files.length}개 ({formatBytes(data?.pick.bytes ?? 0)})</MetadataListItem>
+        <MetadataListItem label="학습 코드">{train?.upload?.path} ({formatBytes(train?.upload?.file.size ?? 0)})</MetadataListItem>
+        {ckpt ? <MetadataListItem label="체크포인트 간격">약 {formatDuration(ckpt.intervalSeconds)}마다</MetadataListItem> : null}
+        <MetadataListItem label="상세 설정">{changed.length === 0 ? '기본값' : changed.map(([k, v]) => `${k} ${v}`).join(', ')}</MetadataListItem>
+      </MetadataList>
+      {uploading && <ProgressBar label={percent < 100 ? `업로드 중 ${formatBytes(sent.loaded)} / ${formatBytes(sent.total)}` : '업로드 완료. 학습을 제출하는 중입니다.'} value={percent} hasValueLabel />}
+    </VStack>}
+    {problem && <Banner status="error" role="alert" title="진행할 수 없습니다" description={problem} />}
+  </VStack>;
+
+  return <Layout
+    height="fill"
+    header={<LayoutHeader hasDivider>
+      <VStack gap={4}>
+        <Heading level={1}>새 학습 만들기</Heading>
+        <Stepper activeStep={step} label="새 학습 단계" onStepClick={uploading ? undefined : (i) => { if (i < step) { setIssue(''); setStep(i); } }}>
+          {STEPS.map((s, i) => <Step key={s.label} step={i} label={s.label} description={s.description} isDisabled={i > step} />)}
+        </Stepper>
+      </VStack>
+    </LayoutHeader>}
+    content={<LayoutContent label="단계 내용">{body}</LayoutContent>}
+    footer={<LayoutFooter hasDivider>
+      <HStack gap={2} vAlign="center">
+        <Button label={uploading ? '업로드 취소' : step === 0 ? '취소' : '이전'} variant="secondary" onClick={() => { if (uploading) { upload.current?.abort(); return; } if (step === 0) onCancel(); else { setIssue(''); setStep(step - 1); } }} />
+        <StackItem size="fill" />
+        <Button label={['다음: 학습 데이터', '다음: 학습 코드', '다음: 학습 방식', '다음: 최종 확인', uploading ? '올리는 중…' : '업로드하고 학습 시작'][step]} variant="primary" isLoading={uploading} isDisabled={uploading} onClick={next} />
+      </HStack>
+    </LayoutFooter>}
+    end={isWide ? <LayoutPanel hasDivider width={300} label="실행 전 요약">
+      <VStack gap={3}>
+        <Heading level={2}>실행 전 요약</Heading>
+        <Text type="supporting">{strategyText.choice}</Text>
+        <MetadataList>
+          <MetadataListItem label="학습 방식">{strategy.toUpperCase()}</MetadataListItem>
+          <MetadataListItem label="전체 GPU">{gpus}개</MetadataListItem>
+          <MetadataListItem label="모델">{model?.pick.folder || '-'}</MetadataListItem>
+          <MetadataListItem label="업로드">{formatBytes((model?.pick.bytes ?? 0) + (data?.pick.bytes ?? 0) + (train?.upload?.file.size ?? 0))}</MetadataListItem>
+        </MetadataList>
+      </VStack>
+    </LayoutPanel> : undefined}
+  />;
 }
