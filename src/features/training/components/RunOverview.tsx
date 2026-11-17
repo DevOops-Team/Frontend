@@ -8,6 +8,7 @@ import { formatDuration } from '../lib/upload';
 import { STATUS_LABEL, runProgress, stepsPerEpoch, uiState } from '../lib/progress';
 import type { Job, JobEvent, JobFile } from '../types';
 import { FileList } from './FileList';
+import { TrainedModelPanel } from './TrainedModel';
 
 // 쿼터 대기 이벤트. 정상 동작 중에도 길게 나와 화면에서는 뺀다. 원본은 /api/jobs/{id}/events에 남는다.
 const HIDDEN_EVENTS = new Set(['WaitingForQuota', 'ExceedsMaxQuota']);
@@ -44,24 +45,27 @@ export function RunOverview({ job, events, files, onBack }: { job: Job; events: 
       <div className="run-head-meta"><span><code>{job.strategy.toUpperCase()}</code></span><span className="num">GPU {job.gpus}개</span><StateBadge state={state} label={STATUS_LABEL[job.status]} /></div>
     </header>
     <div className="run-grid">
-      <section className="panel run-progress" data-state={state} aria-labelledby="run-progress-title">
-        <div className="progress-top"><h2 id="run-progress-title">{progress.headline}</h2><p className="progress-percent"><strong className="num">{progress.percent}<span>%</span></strong><span>전체 진행률</span></p></div>
-        <div className="track" role="progressbar" aria-label="전체 학습 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percent} aria-valuetext={`${progress.percent}%, ${progress.headline}`}><span style={{ transform: `scaleX(${progress.percent / 100})` }} /></div>
-        <ol className="stages" aria-label="실행 단계">{progress.stages.map((s, i) => <li key={s.label} data-state={s.state} aria-current={s.state === 'active' || s.state === 'error' ? 'step' : undefined}><span className="stage-mark" aria-hidden="true">{s.state === 'done' ? <Icon name="check" size={14} /> : s.state === 'error' ? <Icon name="cross" size={14} /> : i + 1}</span><div><strong>{s.label}</strong><span>{s.state === 'done' ? '완료' : s.state === 'active' ? (job.status === 'QUEUED' ? '대기 중' : '진행 중') : s.state === 'error' ? '실패' : '대기'}</span></div></li>)}</ol>
-        <p className="progress-caption">{caption}</p>
-        <dl className="metrics">
-          <div><dt>Step</dt><dd className="num">{p && p.totalSteps > 0 ? `${p.step} / ${p.totalSteps}` : '-'}</dd></div>
-          <div><dt>Loss</dt><dd className="num">{p && p.step > 0 ? p.loss.toFixed(4) : '-'}</dd></div>
-          <div><dt>마지막 체크포인트</dt><dd className="num">{p && p.lastCheckpointStep > 0 ? p.lastCheckpointStep : '-'}</dd></div>
-          <div><dt>클러스터</dt><dd><code>{job.cluster ?? '-'}</code></dd></div>
-          <div><dt>rank 0 노드</dt><dd><code>{p?.nodeName ?? '-'}</code></dd></div>
-        </dl>
-      </section>
-      <section className="panel run-inputs" aria-labelledby="run-inputs-title">
-        <div className="panel-head"><h2 id="run-inputs-title">학습 설정</h2><button ref={settingsOpener} type="button" className="key" aria-haspopup="dialog" onClick={() => setSettingsOpen(true)}>상세 보기</button></div>
-        <h3 className="files-head">작업 파일</h3>
-        <FileList label="작업 파일" preview="modal" files={files} load={(name) => jobFile(job.id, files.find((f) => f.name === name)?.kind ?? 'code', name)} />
-      </section>
+      <div className="run-main">
+        <section className="panel run-progress" data-state={state} aria-labelledby="run-progress-title">
+          <div className="progress-top"><h2 id="run-progress-title">{progress.headline}</h2><p className="progress-percent"><strong className="num">{progress.percent}<span>%</span></strong><span>전체 진행률</span></p></div>
+          <div className="track" role="progressbar" aria-label="전체 학습 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percent} aria-valuetext={`${progress.percent}%, ${progress.headline}`}><span style={{ transform: `scaleX(${progress.percent / 100})` }} /></div>
+          <ol className="stages" aria-label="실행 단계">{progress.stages.map((s, i) => <li key={s.label} data-state={s.state} aria-current={s.state === 'active' || s.state === 'error' ? 'step' : undefined}><span className="stage-mark" aria-hidden="true">{s.state === 'done' ? <Icon name="check" size={14} /> : s.state === 'error' ? <Icon name="cross" size={14} /> : i + 1}</span><div><strong>{s.label}</strong><span>{s.state === 'done' ? '완료' : s.state === 'active' ? (job.status === 'QUEUED' ? '대기 중' : '진행 중') : s.state === 'error' ? '실패' : '대기'}</span></div></li>)}</ol>
+          <p className="progress-caption">{caption}</p>
+          <dl className="metrics">
+            <div><dt>Step</dt><dd className="num">{p && p.totalSteps > 0 ? `${p.step} / ${p.totalSteps}` : '-'}</dd></div>
+            <div><dt>Loss</dt><dd className="num">{p && p.step > 0 ? p.loss.toFixed(4) : '-'}</dd></div>
+            <div><dt>마지막 체크포인트</dt><dd className="num">{p && p.lastCheckpointStep > 0 ? p.lastCheckpointStep : '-'}</dd></div>
+            <div><dt>클러스터</dt><dd><code>{job.cluster ?? '-'}</code></dd></div>
+            <div><dt>rank 0 노드</dt><dd><code>{p?.nodeName ?? '-'}</code></dd></div>
+          </dl>
+        </section>
+        <TrainedModelPanel job={job} />
+        <section className="panel run-inputs" aria-labelledby="run-inputs-title">
+          <div className="panel-head"><h2 id="run-inputs-title">학습 설정</h2><button ref={settingsOpener} type="button" className="key" aria-haspopup="dialog" onClick={() => setSettingsOpen(true)}>상세 보기</button></div>
+          <h3 className="files-head">작업 파일</h3>
+          <FileList label="작업 파일" preview="modal" files={files} load={(name) => jobFile(job.id, files.find((f) => f.name === name)?.kind ?? 'code', name)} />
+        </section>
+      </div>
       <section className="panel run-history" aria-labelledby="run-history-title"><div className="panel-head"><h2 id="run-history-title">실행 기록</h2><span className="history-live" data-live={!isTerminal(job.status)}>{isTerminal(job.status) ? '기록 종료' : '실시간 업데이트'}</span></div>
         {ordered.length === 0 && <p className="muted">아직 기록이 없습니다.</p>}
         <ol ref={timeline} className="timeline" aria-label="실행 기록" tabIndex={0} onScroll={onTimelineScroll}>{ordered.map((e) => <li key={e.key} data-level={e.type === 'Warning' ? 'warning' : 'info'}><time className="num" dateTime={e.time} title={formatDateTime(e.time)}>{formatClock(e.time)}</time><span className="tick" aria-hidden="true" /><div><p className="timeline-reason"><strong>{e.reason}</strong><code>{e.cluster}</code></p><p title={e.message}>{e.message}</p></div></li>)}</ol>

@@ -1,4 +1,4 @@
-export type IconName = 'grid' | 'add' | 'sun' | 'moon' | 'layers' | 'check' | 'arrow' | 'chip' | 'back' | 'cross' | 'clock' | 'play' | 'stop' | 'doc';
+export type IconName = 'grid' | 'add' | 'sun' | 'moon' | 'layers' | 'check' | 'arrow' | 'chip' | 'back' | 'cross' | 'clock' | 'play' | 'stop' | 'doc' | 'download';
 
 export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
   const paths = {
@@ -16,6 +16,7 @@ export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
     play: <path d="M8 5.5v13l10-6.5z" />,
     stop: <><circle cx="12" cy="12" r="8.5" /><path d="M6 18L18 6" /></>,
     doc: <><path d="M7 3h7l4 4v14H7z" /><path d="M14 3v4h4M10 12h5m-5 4h5" /></>,
+    download: <path d="M12 4v11m-5-5l5 5 5-5M5 20h14" />,
   };
   return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
