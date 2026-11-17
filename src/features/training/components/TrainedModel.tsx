@@ -1,4 +1,13 @@
 import { useEffect, useState } from 'react';
+import { Banner } from '@astryxdesign/core/Banner';
+import { Button } from '@astryxdesign/core/Button';
+import { Card } from '@astryxdesign/core/Card';
+import { HStack, VStack } from '@astryxdesign/core/Layout';
+import { Link } from '@astryxdesign/core/Link';
+import { List, ListItem } from '@astryxdesign/core/List';
+import { MetadataList, MetadataListItem } from '@astryxdesign/core/MetadataList';
+import { Skeleton } from '@astryxdesign/core/Skeleton';
+import { Heading, Text } from '@astryxdesign/core/Text';
 import { Icon } from '@/shared/ui/Icon';
 import { ApiError, errorMessage, getTrainedModel, modelFileUrl } from '../api';
 import { formatBytes, formatDateTime } from '../lib/format';
@@ -37,41 +46,45 @@ export function TrainedModelPanel({ job }: { job: Job }) {
 
   let body;
   if (!finished) {
-    body = <p className="muted">{emptyText(job)}</p>;
+    body = <Text color="secondary">{emptyText(job)}</Text>;
   } else if (!current) {
-    body = <div className="model-skeleton" aria-hidden="true"><span /><span /><span /></div>;
+    body = <VStack gap={2} aria-hidden="true"><Skeleton height={20} width="40%" /><Skeleton height={16} /><Skeleton height={16} /></VStack>;
   } else if (current.missing) {
-    body = <p className="muted">승인된 체크포인트가 없어 내려받을 모델이 없습니다.</p>;
+    body = <Text color="secondary">승인된 체크포인트가 없어 내려받을 모델이 없습니다.</Text>;
   } else if (current.error) {
-    body = <>
-      <p role="alert" className="issues">{current.error}</p>
-      <div><button type="button" className="key" onClick={() => { setLoaded(null); setAttempt((n) => n + 1); }}>다시 불러오기</button></div>
-    </>;
+    body = <VStack gap={3} hAlign="start">
+      <Banner status="error" role="alert" title="모델 정보를 불러오지 못했습니다" description={current.error} />
+      <Button label="다시 불러오기" variant="secondary" onClick={() => { setLoaded(null); setAttempt((n) => n + 1); }} />
+    </VStack>;
   } else if (model) {
-    body = <>
-      <div className="model-lead">
-        <p className="model-step"><span>마지막 체크포인트</span><strong className="num">step {model.step.toLocaleString()}</strong><time className="num" dateTime={model.approvedAt}>{formatDateTime(model.approvedAt)} 승인</time></p>
-      </div>
-      <dl className="metrics">
-        <div><dt>크기</dt><dd className="num">{formatBytes(model.sizeBytes)}</dd></div>
-        <div><dt>형식</dt><dd><code>{model.format}</code></dd></div>
-        <div><dt>저장 GPU</dt><dd className="num">{model.worldSize}개</dd></div>
-        <div><dt>세대</dt><dd className="num">{model.generation}</dd></div>
-      </dl>
-      <h3 className="files-head">파일 {model.files.length}개</h3>
-      {model.files.length > 1 && <p className="muted model-note">체크포인트는 모든 파일을 한 폴더에 받아야 불러올 수 있습니다.</p>}
-      <ul className="file-list" aria-label="모델 파일">{model.files.map((f) => <li key={f.name}>
-        <div className="file-row">
-          <span className="file-name" title={`${f.name}\nsha256 ${f.sha256}`}>{f.name}</span>
-          <span className="muted num">{formatBytes(f.size)}</span>
-          <a className="link" href={modelFileUrl(job.id, f.name)} download aria-label={`${f.name} 내려받기`}><Icon name="download" size={16} />내려받기</a>
-        </div>
-      </li>)}</ul>
-    </>;
+    body = <VStack gap={4}>
+      <HStack gap={3} vAlign="end" wrap="wrap">
+        <Text type="supporting">마지막 체크포인트</Text>
+        <Text type="large" weight="semibold" hasTabularNumbers>{`step ${model.step.toLocaleString()}`}</Text>
+        <Text type="supporting" hasTabularNumbers><time dateTime={model.approvedAt}>{formatDateTime(model.approvedAt)} 승인</time></Text>
+      </HStack>
+      <MetadataList columns={4}>
+        <MetadataListItem label="크기">{formatBytes(model.sizeBytes)}</MetadataListItem>
+        <MetadataListItem label="형식"><Text type="code">{model.format}</Text></MetadataListItem>
+        <MetadataListItem label="저장 GPU">{model.worldSize}개</MetadataListItem>
+        <MetadataListItem label="세대">{model.generation}</MetadataListItem>
+      </MetadataList>
+      <VStack gap={2}>
+        <Heading level={3}>파일 {model.files.length}개</Heading>
+        {model.files.length > 1 && <Text type="supporting">체크포인트는 모든 파일을 한 폴더에 받아야 불러올 수 있습니다.</Text>}
+        <List density="compact" hasDividers aria-label="모델 파일">{model.files.map((f) => <ListItem key={f.name}
+          label={<Text type="code" maxLines={1}><span title={`${f.name}\nsha256 ${f.sha256}`}>{f.name}</span></Text>}
+          description={<Text type="supporting" hasTabularNumbers>{formatBytes(f.size)}</Text>}
+          endContent={<Link href={modelFileUrl(job.id, f.name)} label={`${f.name} 내려받기`} download><HStack gap={1} vAlign="center"><Icon name="download" size={16} />내려받기</HStack></Link>} />)}
+        </List>
+      </VStack>
+    </VStack>;
   }
 
-  return <section className="panel run-model" aria-labelledby="run-model-title" aria-busy={finished && !current ? true : undefined}>
-    <div className="panel-head"><h2 id="run-model-title">학습 완료 모델</h2></div>
-    {body}
-  </section>;
+  return <Card padding={5}>
+    <VStack gap={4} aria-labelledby="run-model-title" aria-busy={finished && !current ? true : undefined} as="section">
+      <Heading level={2} id="run-model-title">학습 완료 모델</Heading>
+      {body}
+    </VStack>
+  </Card>;
 }
