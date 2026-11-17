@@ -129,3 +129,21 @@ export interface FilePreview {
   truncated: boolean;
   totalSize: number;
 }
+
+// GET /api/jobs/{id}/model: 학습이 끝난 작업의 최종 모델 = 마지막 승인 체크포인트 (ADR-30).
+export interface TrainedModelFile {
+  name: string;
+  size: number;
+  sha256: string;
+}
+
+export interface TrainedModel {
+  jobId: string;
+  generation: number;
+  step: number;
+  format: string; // fsdp-dcp · ddp-pt
+  worldSize: number;
+  sizeBytes: number;
+  approvedAt: string;
+  files: TrainedModelFile[];
+}
