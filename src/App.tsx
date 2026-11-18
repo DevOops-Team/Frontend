@@ -15,7 +15,7 @@ import { Heading, Text } from '@astryxdesign/core/Text';
 import { Theme } from '@astryxdesign/core/theme';
 import { neutralTheme } from '@astryxdesign/theme-neutral/built';
 import { useTheme } from '@/features/theme';
-import { CreatePipeline, JOB_LIST_POLL_MS, RunPage, STATUS_LABEL, UPLOAD_LABEL, UploadPage, deleteJob, deleteJobs, errorMessage, isDeletable, isUploadActive, listJobs, runProgress, uiState, uploadStats, uploadUiState, useUploads, type Job, type PendingUpload } from '@/features/training';
+import { CreatePipeline, JOB_LIST_POLL_MS, RunPage, STATUS_LABEL, StopJobButton, UPLOAD_LABEL, UploadPage, deleteJob, deleteJobs, errorMessage, isDeletable, isUploadActive, listJobs, runProgress, uiState, uploadStats, uploadUiState, useUploads, type Job, type PendingUpload } from '@/features/training';
 import { formatBytes } from '@/features/training/lib/format';
 import { Icon } from '@/shared/ui/Icon';
 import { ChipIcon, DocIcon, GridIcon } from '@/shared/ui/navIcons';
@@ -89,8 +89,11 @@ function Overview({ jobs, pending, listError, open, reload }: { jobs: Job[]; pen
     { key: 'gpus', header: '사용 GPU', width: pixel(96), renderCell: (r: Row) => <Text hasTabularNumbers>{r.gpus}개</Text> },
     { key: 'progress', header: '진행', width: proportional(2, { minWidth: 200 }), renderCell: (r: Row) => r.kind === 'upload' ? <UploadProgress upload={r.upload} /> : <RowProgress job={r.job} /> },
     { key: 'status', header: '상태', width: pixel(130), renderCell: (r: Row) => r.kind === 'upload' ? <StateBadge state={uploadUiState(r.upload.state)} label={UPLOAD_LABEL[r.upload.state]} /> : <StateBadge state={uiState(r.job.status)} label={STATUS_LABEL[r.job.status]} /> },
-    { key: 'detail', header: '', width: pixel(110), align: 'end' as const, renderCell: (r: Row) => <Button label={r.kind === 'upload' ? '업로드 보기' : '상세 보기'} aria-label={`${r.name} ${r.kind === 'upload' ? '업로드' : '상세'} 보기`} variant="secondary" size="sm" onClick={() => open(r.id)} /> },
-  ], [open]);
+    { key: 'detail', header: '', width: pixel(220), align: 'end' as const, renderCell: (r: Row) => <HStack gap={2} hAlign="end">
+      {r.kind === 'job' && <StopJobButton job={r.job} onStopped={reload} />}
+      <Button label={r.kind === 'upload' ? '업로드 보기' : '상세 보기'} aria-label={`${r.name} ${r.kind === 'upload' ? '업로드' : '상세'} 보기`} variant="secondary" size="sm" onClick={() => open(r.id)} />
+    </HStack> },
+  ], [open, reload]);
 
   return <><Layout
     height="fill"
@@ -116,14 +119,14 @@ function Overview({ jobs, pending, listError, open, reload }: { jobs: Job[]; pen
         <Grid columns={{ minWidth: 200 }} gap={4}>
           <Card padding={4}><VStack gap={2}><Text type="supporting">전체 학습</Text><Text type="display-2" hasTabularNumbers>{rows.length}</Text></VStack></Card>
           <Card padding={4}><VStack gap={2}><Text type="supporting">완료한 학습</Text><Text type="display-2" hasTabularNumbers>{count('SUCCEEDED')}</Text></VStack></Card>
-          <Card padding={4}><VStack gap={2}><Text type="supporting">진행 중인 학습</Text><Text type="display-2" hasTabularNumbers>{count('QUEUED', 'ADMITTED', 'RUNNING', 'RECOVERING') + uploading}</Text></VStack></Card>
+          <Card padding={4}><VStack gap={2}><Text type="supporting">진행 중인 학습</Text><Text type="display-2" hasTabularNumbers>{count('QUEUED', 'ADMITTED', 'RUNNING', 'RECOVERING', 'STOPPING') + uploading}</Text></VStack></Card>
         </Grid>
         <VStack gap={3}>
           <HStack vAlign="center"><StackItem size="fill"><Heading level={2}>내 학습</Heading></StackItem><Text type="supporting" hasTabularNumbers>총 {rows.length}개{uploading > 0 ? ` · S3 업로드 중 ${uploading}개` : ''}</Text></HStack>
           {selectionState.hasSelection
             ? <TableSelectionToolbar selection={selectionState} label="선택한 학습" clearLabel="선택 해제" renderSelectionLabel={(n) => `${n}개 선택됨`}
               startContent={<Button label="선택 삭제" variant="destructive" size="sm" icon={<Icon name="cross" size={16} />} isDisabled={targets.length === 0} onClick={() => setConfirming(true)} />} />
-            : <Text type="supporting">끝난 학습(성공 · 실패 · 취소됨)을 골라 삭제할 수 있습니다. 진행 중인 학습은 먼저 중지해야 합니다.</Text>}
+            : <Text type="supporting">끝난 학습(성공 · 실패 · 중단됨)을 골라 삭제할 수 있습니다. 진행 중인 학습은 먼저 중단해야 합니다.</Text>}
           <Card padding={0}>
             <Table<Row> data={rows} columns={columns} idKey="id" density="balanced" hasHover plugins={plugins} />
           </Card>

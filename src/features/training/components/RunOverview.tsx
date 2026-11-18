@@ -21,12 +21,13 @@ import { formatDuration } from '../lib/upload';
 import { STATUS_LABEL, runProgress, stepsPerEpoch, uiState } from '../lib/progress';
 import type { Job, JobEvent, JobFile } from '../types';
 import { FileList } from './FileList';
+import { StopJobButton } from './StopJob';
 import { TrainedModelPanel } from './TrainedModel';
 
 // 쿼터 대기 이벤트. 정상 동작 중에도 길게 나와 화면에서는 뺀다. 원본은 /api/jobs/{id}/events에 남는다.
 const HIDDEN_EVENTS = new Set(['WaitingForQuota', 'ExceedsMaxQuota']);
 
-export function RunOverview({ job, events, files, onBack }: { job: Job; events: JobEvent[]; files: JobFile[]; onBack: () => void }) {
+export function RunOverview({ job, events, files, onBack, onChanged }: { job: Job; events: JobEvent[]; files: JobFile[]; onBack: () => void; onChanged?: () => void }) {
   const progress = runProgress(job);
   const state = uiState(job.status);
   const ordered = events.filter((e) => !HIDDEN_EVENTS.has(e.reason)).sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
@@ -77,7 +78,8 @@ export function RunOverview({ job, events, files, onBack }: { job: Job; events: 
               <Heading level={1} maxLines={1}><span title={job.name}>{job.name}</span></Heading>
             </VStack>
           </StackItem>
-          <HStack gap={2} vAlign="center"><Badge variant="neutral" label={job.strategy.toUpperCase()} /><Badge variant="neutral" label={`GPU ${job.gpus}개`} /><StateBadge state={state} label={STATUS_LABEL[job.status]} /></HStack>
+          <HStack gap={2} vAlign="center"><Badge variant="neutral" label={job.strategy.toUpperCase()} /><Badge variant="neutral" label={`GPU ${job.gpus}개`} /><StateBadge state={state} label={STATUS_LABEL[job.status]} />
+            <StopJobButton job={job} size="md" onStopped={() => onChanged?.()} /></HStack>
         </HStack>
       </LayoutHeader>}
       content={<LayoutContent>
@@ -146,6 +148,7 @@ export function RunPage({ id, onBack }: { id: string; onBack: () => void }) {
   const [events, setEvents] = useState<JobEvent[]>([]);
   const [files, setFiles] = useState<JobFile[]>([]);
   const [error, setError] = useState('');
+  const [refresh, setRefresh] = useState(0); // 중단 직후 바로 다시 읽는다
 
   useEffect(() => {
     let live = true;
@@ -168,7 +171,7 @@ export function RunPage({ id, onBack }: { id: string; onBack: () => void }) {
     }
     void poll();
     return () => { live = false; clearTimeout(timer); };
-  }, [id]);
+  }, [id, refresh]);
 
   if (!job) return <Layout height="fill" content={<LayoutContent>
     <VStack gap={3} hAlign="start">
@@ -178,6 +181,6 @@ export function RunPage({ id, onBack }: { id: string; onBack: () => void }) {
   </LayoutContent>} />;
   return <>
     {error && <Banner status="error" role="alert" title="최신 상태를 불러오지 못했습니다" description={error} />}
-    <RunOverview job={job} events={events} files={files} onBack={onBack} />
+    <RunOverview job={job} events={events} files={files} onBack={onBack} onChanged={() => setRefresh((n) => n + 1)} />
   </>;
 }

@@ -11,11 +11,13 @@ export const STATUS_LABEL: Record<JobStatus, string> = {
   SUCCEEDED: '성공',
   FAILED: '실패',
   RECOVERING: '복구 중',
-  CANCELLED: '취소됨',
+  CANCELLED: '중단됨',
+  STOPPING: '중단 중',
 };
 
 // StateBadge · 진행 카드의 색은 PENDING · RUNNING · SUCCEEDED · FAILED · CANCELLED만 있다.
 export function uiState(s: JobStatus): string {
+  if (s === 'STOPPING') return 'CANCELLED';
   return s === 'QUEUED' || s === 'ADMITTED' || s === 'RECOVERING' ? 'PENDING' : s;
 }
 
@@ -32,7 +34,7 @@ function activeStage(job: Job): number {
 export function runProgress(job: Job) {
   const complete = job.status === 'SUCCEEDED';
   const failed = job.status === 'FAILED';
-  const cancelled = job.status === 'CANCELLED';
+  const cancelled = job.status === 'CANCELLED' || job.status === 'STOPPING';
   const active = activeStage(job);
   const { progress } = job;
   // 100%는 JobSet이 실제로 완료됐을 때만 보여 준다. 마지막 step 뒤에도 저장이 남아 있을 수 있다.
@@ -46,8 +48,10 @@ export function runProgress(job: Job) {
     ? '학습이 완료됐어요'
     : failed
       ? '학습 중 문제가 발생했어요'
+      : job.status === 'STOPPING'
+        ? '학습을 중단하고 있어요'
       : cancelled
-        ? '학습이 중지됐어요'
+        ? '학습이 중단됐어요'
         : job.status === 'RECOVERING'
           ? '다른 GPU로 옮겨 이어서 학습할 준비를 하고 있어요'
           : active === 0
