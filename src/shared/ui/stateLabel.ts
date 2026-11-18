@@ -4,7 +4,7 @@ export const STATE_LABEL: Record<string, string> = {
   RUNNING: '실행 중',
   SUCCEEDED: '성공',
   FAILED: '실패',
-  CANCELLED: '취소됨',
+  CANCELLED: '중단됨',
   REQUESTED: '요청됨',
   ACTIVE: '실행 중',
   INFEASIBLE: '실행 불가',

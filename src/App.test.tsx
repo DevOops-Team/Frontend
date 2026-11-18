@@ -63,3 +63,54 @@ describe('job list deletion', () => {
     expect(screen.getByText('1개 선택됨')).toBeInTheDocument();
   });
 });
+
+// 목록 · POST stop을 흉내 내는 fetch. 중단한 학습은 다음 목록에서 STOPPING이 된다.
+function stopBackend(jobs: Job[], fail?: { status: number; body: object }) {
+  let list = jobs;
+  const stopped: string[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === 'POST' && url.endsWith('/stop')) {
+      if (fail) return new Response(JSON.stringify(fail.body), { status: fail.status });
+      const id = url.split('/').at(-2) as string;
+      stopped.push(id);
+      list = list.map((j) => j.id === id ? { ...j, status: 'STOPPING' as const } : j);
+      return new Response(null, { status: 202 });
+    }
+    return new Response(JSON.stringify({ items: list }), { status: 200 });
+  }));
+  return stopped;
+}
+
+describe('job list stop (GPU-204)', () => {
+  it('stops a running job after confirmation and shows it as stopping', async () => {
+    const stopped = stopBackend([job('aa', 'done-one', 'SUCCEEDED'), job('cc', 'busy', 'RUNNING')]);
+    render(<App />);
+    await screen.findByText('busy');
+    expect(screen.queryByRole('button', { name: 'done-one 학습 중단' })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'busy 학습 중단' }));
+    const dialog = screen.getByText("'busy' 학습을 중단할까요?").closest('dialog') as HTMLElement;
+    expect(within(dialog).getByText(/아직 저장된 체크포인트가 없어/)).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: '학습 중단' }));
+
+    expect(stopped).toEqual(['cc']);
+    expect(await screen.findByText('중단 중')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'busy 학습 중단' })).not.toBeInTheDocument();
+  });
+
+  it('disables stop while the job is moved to another GPU', async () => {
+    stopBackend([job('rr', 'moving', 'RECOVERING')]);
+    render(<App />);
+    await screen.findByText('moving');
+    expect(screen.getByRole('button', { name: 'moving 학습 중단' })).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('keeps the dialog open with the reason when the stop fails', async () => {
+    stopBackend([job('cc', 'busy', 'RUNNING')], { status: 409, body: { error: 'the job has already ended (status SUCCEEDED)', code: 'FINISHED' } });
+    render(<App />);
+    await screen.findByText('busy');
+    await userEvent.click(screen.getByRole('button', { name: 'busy 학습 중단' }));
+    await userEvent.click(within(screen.getByText("'busy' 학습을 중단할까요?").closest('dialog') as HTMLElement).getByRole('button', { name: '학습 중단' }));
+    expect(await screen.findByText(/중단하지 못했습니다: the job has already ended/)).toBeInTheDocument();
+  });
+});

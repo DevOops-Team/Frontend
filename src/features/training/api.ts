@@ -72,6 +72,13 @@ export async function deleteJob(id: string): Promise<void> {
   if (!res.ok) throw await failure(res);
 }
 
+// 학습 중단 (GPU-204): 대기 · 실행 중인 학습의 JobSet을 지운다. 성공은 202이고 상태는 STOPPING → CANCELLED로 바뀐다.
+// 복구 중이면 409 RECOVERING, 이미 끝났으면 409 FINISHED.
+export async function stopJob(id: string): Promise<void> {
+  const res = await fetch(`/api/jobs/${seg(id)}/stop`, { method: 'POST' });
+  if (!res.ok) throw await failure(res);
+}
+
 // 업로드할 파일 하나. path는 모델 폴더 안 경로(폴더명/...) 또는 데이터 · 학습 코드 파일 이름이다.
 export interface UploadFile {
   path: string;
@@ -125,6 +132,7 @@ export function buildSpec(f: JobForm, hyperparameters: Record<string, number | n
   return { ...(name ? { name } : {}), strategy: f.strategy, gpus: f.gpus, hyperparameters };
 }
 
+// 화면이 더 읽지 않아도 되는 상태. STOPPING은 곧 CANCELLED가 되므로 계속 읽는다.
 export function isTerminal(s: JobStatus): boolean {
   return s === 'SUCCEEDED' || s === 'FAILED' || s === 'CANCELLED';
 }
