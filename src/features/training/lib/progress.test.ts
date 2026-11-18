@@ -30,7 +30,17 @@ describe('statuses from Kafka job.lifecycle (GPU-146)', () => {
     const p = runProgress(j);
     expect(p.interrupted).toBe(true);
     expect(p.stages[p.active].state).toBe('stopped');
-    expect(p.headline).toBe('학습이 중지됐어요');
+    expect(p.headline).toBe('학습이 중단됐어요');
+  });
+
+  it('shows a stop in progress as stopping and keeps polling until it is cancelled (GPU-204)', () => {
+    const j = job({ status: 'STOPPING', progress: { status: 'RUNNING', generation: 1, step: 50, totalSteps: 208, loss: 3, lastCheckpointStep: 40, updatedAt: '2026-11-13T00:15:00Z' } });
+    expect(STATUS_LABEL.STOPPING).toBe('중단 중');
+    expect(uiState(j.status)).toBe('CANCELLED');
+    expect(isTerminal(j.status)).toBe(false);
+    const p = runProgress(j);
+    expect(p.stages[p.active].state).toBe('stopped');
+    expect(p.headline).toBe('학습을 중단하고 있어요');
   });
 
   it('keeps progress from job.progress for a running job', () => {

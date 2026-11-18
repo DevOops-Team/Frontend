@@ -2,7 +2,8 @@
 // 필드 이름은 camelCase이고, config.json 키만 snake_case 그대로다.
 
 // Backend가 Kafka job.lifecycle 사건으로 정한다 (GPU-146). RECOVERING: 재배치로 다음 세대 대기, CANCELLED: 중지.
-export type JobStatus = 'QUEUED' | 'ADMITTED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'RECOVERING' | 'CANCELLED';
+// STOPPING: 사용자가 중단해 JobSet은 지웠고 종료 사건(job.cancelled)을 기다리는 중 (GPU-204).
+export type JobStatus = 'QUEUED' | 'ADMITTED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'RECOVERING' | 'CANCELLED' | 'STOPPING';
 
 export interface HyperparameterDef {
   key: string;
