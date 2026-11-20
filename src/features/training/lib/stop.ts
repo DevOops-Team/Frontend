@@ -12,3 +12,9 @@ export function showsStop(status: JobStatus): boolean {
 }
 
 export const STOP_RECOVERING_HINT = '다른 GPU로 옮기는 중에는 중단할 수 없습니다. 다시 실행되면 중단해 주세요.';
+
+// 다시 시작할 수 있는 학습 (Backend POST /api/jobs/{id}/restart, GPU-240). 사용자가 중단한(CANCELLED) 학습만.
+// 새 세대로 다시 제출되어 마지막으로 저장된 체크포인트 다음 step부터 학습한다. '중단 중'(STOPPING)은 끝나길 기다린다.
+export function isRestartable(status: JobStatus): boolean {
+  return status === 'CANCELLED';
+}

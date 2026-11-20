@@ -15,7 +15,7 @@ import { Heading, Text } from '@astryxdesign/core/Text';
 import { Theme } from '@astryxdesign/core/theme';
 import { neutralTheme } from '@astryxdesign/theme-neutral/built';
 import { useTheme } from '@/features/theme';
-import { CreatePipeline, JOB_LIST_POLL_MS, RunPage, STATUS_LABEL, StopJobButton, UPLOAD_LABEL, UploadPage, deleteJob, deleteJobs, errorMessage, isDeletable, isUploadActive, listJobs, runProgress, uiState, uploadStats, uploadUiState, useUploads, type Job, type PendingUpload } from '@/features/training';
+import { CreatePipeline, JOB_LIST_POLL_MS, RestartJobButton, RunPage, STATUS_LABEL, StopJobButton, UPLOAD_LABEL, UploadPage, deleteJob, deleteJobs, errorMessage, isDeletable, isUploadActive, listJobs, runProgress, uiState, uploadStats, uploadUiState, useUploads, type Job, type PendingUpload } from '@/features/training';
 import { formatBytes } from '@/features/training/lib/format';
 import { Icon } from '@/shared/ui/Icon';
 import { ChipIcon, DocIcon, GridIcon } from '@/shared/ui/navIcons';
@@ -91,6 +91,7 @@ function Overview({ jobs, pending, listError, open, reload }: { jobs: Job[]; pen
     { key: 'status', header: '상태', width: pixel(130), renderCell: (r: Row) => r.kind === 'upload' ? <StateBadge state={uploadUiState(r.upload.state)} label={UPLOAD_LABEL[r.upload.state]} /> : <StateBadge state={uiState(r.job.status)} label={STATUS_LABEL[r.job.status]} /> },
     { key: 'detail', header: '', width: pixel(220), align: 'end' as const, renderCell: (r: Row) => <HStack gap={2} hAlign="end">
       {r.kind === 'job' && <StopJobButton job={r.job} onStopped={reload} />}
+      {r.kind === 'job' && <RestartJobButton job={r.job} onRestarted={reload} />}
       <Button label={r.kind === 'upload' ? '업로드 보기' : '상세 보기'} aria-label={`${r.name} ${r.kind === 'upload' ? '업로드' : '상세'} 보기`} variant="secondary" size="sm" onClick={() => open(r.id)} />
     </HStack> },
   ], [open, reload]);
