@@ -79,6 +79,13 @@ export async function stopJob(id: string): Promise<void> {
   if (!res.ok) throw await failure(res);
 }
 
+// 학습 다시 시작 (GPU-240): 중단한(CANCELLED) 학습을 새 세대로 다시 제출해 마지막 승인 체크포인트부터 이어서 학습한다.
+// 성공은 202이고 상태는 다시 QUEUED부터. 아직 중단 중이면 409 STOPPING, 중단한 학습이 아니면 409 NOT_STOPPED · FINISHED.
+export async function restartJob(id: string): Promise<void> {
+  const res = await fetch(`/api/jobs/${seg(id)}/restart`, { method: 'POST' });
+  if (!res.ok) throw await failure(res);
+}
+
 // 업로드할 파일 하나. path는 모델 폴더 안 경로(폴더명/...) 또는 데이터 · 학습 코드 파일 이름이다.
 export interface UploadFile {
   path: string;
