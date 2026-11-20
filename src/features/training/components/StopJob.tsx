@@ -40,7 +40,7 @@ export function StopJobButton({ job, size = 'sm', onStopped }: { job: Job; size?
       isOpen={confirming}
       onOpenChange={(open) => { if (!stopping) setConfirming(open); }}
       title={`'${job.name}' 학습을 중단할까요?`}
-      description={error ? `중단하지 못했습니다: ${error}` : `GPU에서 학습을 바로 멈춥니다. ${saved} 중단한 학습은 다시 이어서 실행할 수 없습니다.`}
+      description={error ? `중단하지 못했습니다: ${error}` : `GPU에서 학습을 바로 멈춥니다. ${saved} 중단한 학습은 나중에 '다시 시작'으로 저장된 체크포인트부터 이어서 학습할 수 있습니다.`}
       cancelLabel="계속 학습"
       actionLabel="학습 중단"
       actionVariant="destructive"

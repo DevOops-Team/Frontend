@@ -114,3 +114,48 @@ describe('job list stop (GPU-204)', () => {
     expect(await screen.findByText(/중단하지 못했습니다: the job has already ended/)).toBeInTheDocument();
   });
 });
+
+// 목록 · POST restart를 흉내 내는 fetch. 다시 시작한 학습은 다음 목록에서 QUEUED가 된다.
+function restartBackend(jobs: Job[], fail?: { status: number; body: object }) {
+  let list = jobs;
+  const restarted: string[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === 'POST' && url.endsWith('/restart')) {
+      if (fail) return new Response(JSON.stringify(fail.body), { status: fail.status });
+      const id = url.split('/').at(-2) as string;
+      restarted.push(id);
+      list = list.map((j) => j.id === id ? { ...j, status: 'QUEUED' as const } : j);
+      return new Response(null, { status: 202 });
+    }
+    return new Response(JSON.stringify({ items: list }), { status: 200 });
+  }));
+  return restarted;
+}
+
+describe('job list restart (GPU-240)', () => {
+  it('restarts a stopped job after confirmation and shows it queued again', async () => {
+    const restarted = restartBackend([job('aa', 'done-one', 'SUCCEEDED'), job('cc', 'paused', 'CANCELLED'), job('rr', 'busy', 'RUNNING')]);
+    render(<App />);
+    await screen.findByText('paused');
+    expect(screen.queryByRole('button', { name: 'done-one 다시 시작' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'busy 다시 시작' })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'paused 다시 시작' }));
+    const dialog = screen.getByText("'paused' 학습을 다시 시작할까요?").closest('dialog') as HTMLElement;
+    expect(within(dialog).getByText(/저장된 체크포인트가 없으면 처음부터/)).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: '다시 시작' }));
+
+    expect(restarted).toEqual(['cc']);
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'paused 다시 시작' })).not.toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'paused 학습 중단' })).toBeInTheDocument();
+  });
+
+  it('keeps the dialog open with the reason when the restart fails', async () => {
+    restartBackend([job('cc', 'paused', 'CANCELLED')], { status: 409, body: { error: 'the job is still stopping', code: 'STOPPING' } });
+    render(<App />);
+    await screen.findByText('paused');
+    await userEvent.click(screen.getByRole('button', { name: 'paused 다시 시작' }));
+    await userEvent.click(within(screen.getByText("'paused' 학습을 다시 시작할까요?").closest('dialog') as HTMLElement).getByRole('button', { name: '다시 시작' }));
+    expect(await screen.findByText(/다시 시작하지 못했습니다: the job is still stopping/)).toBeInTheDocument();
+  });
+});

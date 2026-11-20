@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isStoppable, showsStop } from './stop';
+import { isRestartable, isStoppable, showsStop } from './stop';
 
 describe('isStoppable', () => {
   it('allows only queued, admitted and running jobs', () => {
@@ -10,5 +10,12 @@ describe('isStoppable', () => {
   it('shows a disabled button while recovering and none once stopping or finished', () => {
     expect(showsStop('RECOVERING')).toBe(true);
     expect(['STOPPING', 'SUCCEEDED', 'FAILED', 'CANCELLED'].some((s) => showsStop(s as never))).toBe(false);
+  });
+});
+
+describe('isRestartable', () => {
+  it('allows only jobs the user stopped', () => {
+    expect(isRestartable('CANCELLED')).toBe(true);
+    expect(['QUEUED', 'ADMITTED', 'RUNNING', 'RECOVERING', 'STOPPING', 'SUCCEEDED', 'FAILED'].some((s) => isRestartable(s as never))).toBe(false);
   });
 });

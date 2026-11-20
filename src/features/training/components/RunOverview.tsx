@@ -21,6 +21,7 @@ import { formatDuration } from '../lib/upload';
 import { STATUS_LABEL, runProgress, stepsPerEpoch, uiState } from '../lib/progress';
 import type { Job, JobEvent, JobFile } from '../types';
 import { FileList } from './FileList';
+import { RestartJobButton } from './RestartJob';
 import { StopJobButton } from './StopJob';
 import { TrainedModelPanel } from './TrainedModel';
 
@@ -79,7 +80,8 @@ export function RunOverview({ job, events, files, onBack, onChanged }: { job: Jo
             </VStack>
           </StackItem>
           <HStack gap={2} vAlign="center"><Badge variant="neutral" label={job.strategy.toUpperCase()} /><Badge variant="neutral" label={`GPU ${job.gpus}개`} /><StateBadge state={state} label={STATUS_LABEL[job.status]} />
-            <StopJobButton job={job} size="md" onStopped={() => onChanged?.()} /></HStack>
+            <StopJobButton job={job} size="md" onStopped={() => onChanged?.()} />
+            <RestartJobButton job={job} size="md" onRestarted={() => onChanged?.()} /></HStack>
         </HStack>
       </LayoutHeader>}
       content={<LayoutContent>
@@ -148,7 +150,7 @@ export function RunPage({ id, onBack }: { id: string; onBack: () => void }) {
   const [events, setEvents] = useState<JobEvent[]>([]);
   const [files, setFiles] = useState<JobFile[]>([]);
   const [error, setError] = useState('');
-  const [refresh, setRefresh] = useState(0); // 중단 직후 바로 다시 읽는다
+  const [refresh, setRefresh] = useState(0); // 중단 · 다시 시작 직후 바로 다시 읽는다
 
   useEffect(() => {
     let live = true;
