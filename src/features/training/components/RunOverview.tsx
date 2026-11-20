@@ -150,7 +150,7 @@ export function RunPage({ id, onBack }: { id: string; onBack: () => void }) {
   const [events, setEvents] = useState<JobEvent[]>([]);
   const [files, setFiles] = useState<JobFile[]>([]);
   const [error, setError] = useState('');
-  const [refresh, setRefresh] = useState(0); // 중단 · 다시 시작 직후 바로 다시 읽는다
+  const [refresh, setRefresh] = useState(0); // 중단 · 재개 직후 바로 다시 읽는다
 
   useEffect(() => {
     let live = true;

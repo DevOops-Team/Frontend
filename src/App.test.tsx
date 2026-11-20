@@ -86,36 +86,36 @@ describe('job list stop (GPU-204)', () => {
     const stopped = stopBackend([job('aa', 'done-one', 'SUCCEEDED'), job('cc', 'busy', 'RUNNING')]);
     render(<App />);
     await screen.findByText('busy');
-    expect(screen.queryByRole('button', { name: 'done-one 학습 중단' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'done-one 중단' })).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: 'busy 학습 중단' }));
+    await userEvent.click(screen.getByRole('button', { name: 'busy 중단' }));
     const dialog = screen.getByText("'busy' 학습을 중단할까요?").closest('dialog') as HTMLElement;
     expect(within(dialog).getByText(/아직 저장된 체크포인트가 없어/)).toBeInTheDocument();
-    await userEvent.click(within(dialog).getByRole('button', { name: '학습 중단' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: '중단' }));
 
     expect(stopped).toEqual(['cc']);
     expect(await screen.findByText('중단 중')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'busy 학습 중단' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'busy 중단' })).not.toBeInTheDocument();
   });
 
   it('disables stop while the job is moved to another GPU', async () => {
     stopBackend([job('rr', 'moving', 'RECOVERING')]);
     render(<App />);
     await screen.findByText('moving');
-    expect(screen.getByRole('button', { name: 'moving 학습 중단' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('button', { name: 'moving 중단' })).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('keeps the dialog open with the reason when the stop fails', async () => {
     stopBackend([job('cc', 'busy', 'RUNNING')], { status: 409, body: { error: 'the job has already ended (status SUCCEEDED)', code: 'FINISHED' } });
     render(<App />);
     await screen.findByText('busy');
-    await userEvent.click(screen.getByRole('button', { name: 'busy 학습 중단' }));
-    await userEvent.click(within(screen.getByText("'busy' 학습을 중단할까요?").closest('dialog') as HTMLElement).getByRole('button', { name: '학습 중단' }));
+    await userEvent.click(screen.getByRole('button', { name: 'busy 중단' }));
+    await userEvent.click(within(screen.getByText("'busy' 학습을 중단할까요?").closest('dialog') as HTMLElement).getByRole('button', { name: '중단' }));
     expect(await screen.findByText(/중단하지 못했습니다: the job has already ended/)).toBeInTheDocument();
   });
 });
 
-// 목록 · POST restart를 흉내 내는 fetch. 다시 시작한 학습은 다음 목록에서 QUEUED가 된다.
+// 목록 · POST restart를 흉내 내는 fetch. 재개한 학습은 다음 목록에서 QUEUED가 된다.
 function restartBackend(jobs: Job[], fail?: { status: number; body: object }) {
   let list = jobs;
   const restarted: string[] = [];
@@ -137,25 +137,25 @@ describe('job list restart (GPU-240)', () => {
     const restarted = restartBackend([job('aa', 'done-one', 'SUCCEEDED'), job('cc', 'paused', 'CANCELLED'), job('rr', 'busy', 'RUNNING')]);
     render(<App />);
     await screen.findByText('paused');
-    expect(screen.queryByRole('button', { name: 'done-one 다시 시작' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'busy 다시 시작' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'done-one 재개' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'busy 재개' })).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: 'paused 다시 시작' }));
-    const dialog = screen.getByText("'paused' 학습을 다시 시작할까요?").closest('dialog') as HTMLElement;
+    await userEvent.click(screen.getByRole('button', { name: 'paused 재개' }));
+    const dialog = screen.getByText("'paused' 학습을 재개할까요?").closest('dialog') as HTMLElement;
     expect(within(dialog).getByText(/저장된 체크포인트가 없으면 처음부터/)).toBeInTheDocument();
-    await userEvent.click(within(dialog).getByRole('button', { name: '다시 시작' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: '재개' }));
 
     expect(restarted).toEqual(['cc']);
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'paused 다시 시작' })).not.toBeInTheDocument());
-    expect(screen.getByRole('button', { name: 'paused 학습 중단' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'paused 재개' })).not.toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'paused 중단' })).toBeInTheDocument();
   });
 
   it('keeps the dialog open with the reason when the restart fails', async () => {
     restartBackend([job('cc', 'paused', 'CANCELLED')], { status: 409, body: { error: 'the job is still stopping', code: 'STOPPING' } });
     render(<App />);
     await screen.findByText('paused');
-    await userEvent.click(screen.getByRole('button', { name: 'paused 다시 시작' }));
-    await userEvent.click(within(screen.getByText("'paused' 학습을 다시 시작할까요?").closest('dialog') as HTMLElement).getByRole('button', { name: '다시 시작' }));
-    expect(await screen.findByText(/다시 시작하지 못했습니다: the job is still stopping/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'paused 재개' }));
+    await userEvent.click(within(screen.getByText("'paused' 학습을 재개할까요?").closest('dialog') as HTMLElement).getByRole('button', { name: '재개' }));
+    expect(await screen.findByText(/재개하지 못했습니다: the job is still stopping/)).toBeInTheDocument();
   });
 });
