@@ -102,7 +102,7 @@ export function CreatePipeline({ onSubmitted, onCancel }: { onSubmitted: (upload
   const nameError = name.trim() && !NAME.test(name.trim()) ? '학습 이름은 1~63자의 소문자 · 숫자 · 하이픈만 쓸 수 있습니다.' : '';
   // 저장 간격 미리보기 (GPU-261, 백엔드와 같은 계산). 텐서 모양을 못 읽으면 Full은 폴더 크기 ÷ 2(16bit)로, QLoRA는 보여 주지 않는다
   const params = shapes ? savedParams(shapes, finetuneInfo?.lora ?? null) : shapes === null && finetune === 'full' && model ? model.pick.bytes / 2 : 0;
-  const ckpt = params > 0 && options ? checkpointInterval(params, checkpointWriters(strategy, gpus), options.checkpoint) : null;
+  const ckpt = params > 0 && options?.checkpoint.bytesPerParam ? checkpointInterval(params, checkpointWriters(strategy, gpus), options.checkpoint) : null;
   const qloraProblem = finetune === 'qlora' && shapes === null ? 'QLoRA는 safetensors 모델 폴더만 쓸 수 있습니다 (텐서 모양으로 어댑터 크기를 계산합니다).'
     : finetune === 'qlora' && shapes && params === 0 ? `QLoRA 대상 층(${finetuneInfo?.lora?.target_modules.join(', ')})이 모델에 없습니다.` : '';
   const changed = Object.entries(parsed.values);
