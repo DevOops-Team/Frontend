@@ -20,11 +20,28 @@ export interface HyperparameterDef {
 export interface TrainingOptions {
   strategies: { name: string; minGpus: number; checkpointFormat: string }[];
   defaultStrategy: string;
+  // 학습 방식 (GPU-262). 옛 백엔드는 이 칸이 없다 → 화면은 full만 보여 준다
+  finetunes?: FinetuneOption[];
+  defaultFinetune?: string;
   gpus: { min: number; max: number; default: number; options: number[] };
   datasetFormat: string;
   hyperparameters: HyperparameterDef[];
   limits: { maxModelBytes: number; maxDataBytes: number; maxTrainBytes: number; maxFiles: number };
-  checkpoint: { sizeFactor: number; writeBytesPerSecond: number; mtbfSeconds: number; minIntervalSeconds: number };
+  // 저장 간격 계산 입력 (GPU-261): C = 저장 파라미터 수 · bytesPerParam ÷ 쓰는 Pod 수 ÷ writeBytesPerSecond
+  checkpoint: { bytesPerParam: number; writeBytesPerSecond: number; mtbfSeconds: number; minIntervalSeconds: number };
+}
+
+export interface LoraConfig {
+  r: number;
+  alpha: number;
+  dropout: number;
+  target_modules: string[];
+}
+
+export interface FinetuneOption {
+  name: string; // full · qlora
+  strategies: string[]; // 이 학습 방식을 쓸 수 있는 분산 방식 (QLoRA는 fsdp만)
+  lora?: LoraConfig;
 }
 
 export interface CheckpointPolicy {
@@ -48,6 +65,7 @@ export interface TrainConfig {
   seed: number;
   world_size: number;
   checkpoint_policy: CheckpointPolicy;
+  finetune?: { method: string; lora: LoraConfig | null }; // schema 3 (GPU-262)
 }
 
 export interface Progress {
@@ -66,6 +84,7 @@ export interface Job {
   name: string;
   model: string;
   strategy: string;
+  finetune?: string; // GPU-262 전에 제출한 학습은 없음 = full
   gpus: number;
   status: JobStatus;
   statusMessage?: string;
@@ -109,6 +128,7 @@ export interface JobFile {
 export interface SubmitSpec {
   name?: string;
   strategy: string;
+  finetune?: string; // full · qlora (GPU-262). 없으면 백엔드 기본값
   gpus: number;
   hyperparameters: Record<string, number | null>;
 }
