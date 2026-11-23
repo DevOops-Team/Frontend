@@ -1,4 +1,4 @@
-import type { TrainingOptions } from '../types';
+import type { LoraConfig, TrainingOptions } from '../types';
 
 // 업로드 전에 화면에서 확인하는 것. 최종 검증은 백엔드가 다시 한다.
 
@@ -60,11 +60,56 @@ export function pickTrain(files: PickedFile[], limits: TrainingOptions['limits']
   return { file: files.length === 1 ? file : null, errors };
 }
 
-// 백엔드와 같은 계산 (Young/Daly): τ = √(2 · C · M), C = 모델 바이트 · sizeFactor / 쓰기 속도, 최소 minIntervalSeconds.
-export function checkpointInterval(modelBytes: number, c: TrainingOptions['checkpoint']): { intervalSeconds: number; saveSeconds: number } {
-  const save = (modelBytes * c.sizeFactor) / c.writeBytesPerSecond;
+// 백엔드와 같은 계산 (Young/Daly, GPU-261): τ = √(2 · C · M), 최소 minIntervalSeconds.
+// C = 저장 파라미터 수 · bytesPerParam(12: fp32 가중치 + Adam 모멘트) ÷ 동시에 쓰는 Pod 수 ÷ 쓰기 속도.
+export function checkpointInterval(savedParams: number, writers: number, c: TrainingOptions['checkpoint']): { intervalSeconds: number; saveSeconds: number } {
+  const save = (savedParams * c.bytesPerParam) / Math.max(1, writers) / c.writeBytesPerSecond;
   const interval = Math.max(c.minIntervalSeconds, Math.sqrt(2 * save * c.mtbfSeconds));
   return { intervalSeconds: Math.round(interval), saveSeconds: Math.round(save * 10) / 10 };
+}
+
+// 체크포인트를 동시에 쓰는 Pod 수: FSDP는 모든 GPU가 자기 조각을, DDP는 rank 0 혼자 전체를 쓴다.
+export function checkpointWriters(strategy: string, gpus: number): number {
+  return strategy === 'fsdp' ? gpus : 1;
+}
+
+// 체크포인트에 저장되는 파라미터 수 (백엔드 ckptpolicy.SavedParams와 같은 규칙).
+// full은 모든 파라미터, qlora는 대상 층의 2차원 weight마다 LoRA 어댑터 r · (in + out).
+export function savedParams(shapes: Record<string, number[]>, lora: LoraConfig | null): number {
+  let n = 0;
+  for (const [name, shape] of Object.entries(shapes)) {
+    if (!lora) {
+      n += shape.reduce((a, d) => a * d, 1);
+      continue;
+    }
+    if (shape.length !== 2) continue;
+    if (lora.target_modules.some((t) => name.endsWith(`.${t}.weight`))) n += lora.r * (shape[0] + shape[1]);
+  }
+  return n;
+}
+
+const MAX_HEADER_BYTES = 100 * 2 ** 20;
+
+// 고른 모델 폴더의 safetensors 헤더(앞 8바이트 길이 + JSON)만 읽어 텐서 이름 → 모양. 가중치는 읽지 않는다.
+// safetensors가 없거나 헤더가 깨졌으면 null (백엔드도 같은 경우 full은 폴더 크기로, qlora는 제출을 거절한다).
+export async function readTensorShapes(files: Blob[]): Promise<Record<string, number[]> | null> {
+  if (files.length === 0) return null;
+  const shapes: Record<string, number[]> = {};
+  try {
+    for (const f of files) {
+      const head = new DataView(await f.slice(0, 8).arrayBuffer());
+      if (head.byteLength < 8) return null;
+      const n = Number(head.getBigUint64(0, true));
+      if (n <= 0 || n > MAX_HEADER_BYTES || 8 + n > f.size) return null;
+      const header = JSON.parse(await f.slice(8, 8 + n).text()) as Record<string, { shape?: number[] }>;
+      for (const [name, t] of Object.entries(header)) {
+        if (name !== '__metadata__' && Array.isArray(t.shape)) shapes[name] = t.shape;
+      }
+    }
+  } catch {
+    return null;
+  }
+  return shapes;
 }
 
 export function formatDuration(seconds: number): string {

@@ -22,7 +22,7 @@ import { ChipIcon, DocIcon, GridIcon } from '@/shared/ui/navIcons';
 import { StateBadge } from '@/shared/ui/StateBadge';
 
 // 목록 한 줄 = 실제 학습 또는 아직 S3로 올리는 중인 학습 (GPU-195). 업로드는 Backend가 201을 줘야 job id가 생긴다.
-type Row = { id: string; name: string; strategy: string; gpus: number } & ({ kind: 'job'; job: Job } | { kind: 'upload'; upload: PendingUpload });
+type Row = { id: string; name: string; strategy: string; finetune?: string; gpus: number } & ({ kind: 'job'; job: Job } | { kind: 'upload'; upload: PendingUpload });
 
 const UPLOAD_VIEW = 'upload:';
 const uploadView = (key: string) => `${UPLOAD_VIEW}${key}`;
@@ -54,8 +54,8 @@ function Overview({ jobs, pending, listError, open, reload }: { jobs: Job[]; pen
   // 올리는 중인 학습을 맨 위에. 제출이 끝난(done) 업로드는 실제 학습 줄로 대신한다.
   const shown = useMemo(() => pending.filter((u) => u.state !== 'done'), [pending]);
   const rows: Row[] = useMemo(() => [
-    ...shown.slice().reverse().map((u): Row => ({ kind: 'upload', id: uploadView(u.key), name: u.summary.name, strategy: u.summary.strategy, gpus: u.summary.gpus, upload: u })),
-    ...jobs.map((j): Row => ({ kind: 'job', id: j.id, name: j.name, strategy: j.strategy, gpus: j.gpus, job: j })),
+    ...shown.slice().reverse().map((u): Row => ({ kind: 'upload', id: uploadView(u.key), name: u.summary.name, strategy: u.summary.strategy, finetune: u.summary.finetune, gpus: u.summary.gpus, upload: u })),
+    ...jobs.map((j): Row => ({ kind: 'job', id: j.id, name: j.name, strategy: j.strategy, finetune: j.finetune, gpus: j.gpus, job: j })),
   ], [shown, jobs]);
   const uploading = shown.filter((u) => isUploadActive(u.state)).length;
 
@@ -85,7 +85,7 @@ function Overview({ jobs, pending, listError, open, reload }: { jobs: Job[]; pen
   }
   const columns = useMemo(() => [
     { key: 'name', header: '학습 이름', width: proportional(2, { minWidth: 160 }), renderCell: (r: Row) => <Button label={r.name} variant="ghost" size="sm" onClick={() => open(r.id)} /> },
-    { key: 'strategy', header: '방식', width: pixel(96), renderCell: (r: Row) => <Badge variant="neutral" label={r.strategy.toUpperCase()} /> },
+    { key: 'strategy', header: '방식', width: pixel(128), renderCell: (r: Row) => <Badge variant="neutral" label={r.finetune === 'qlora' ? `${r.strategy.toUpperCase()} · QLoRA` : r.strategy.toUpperCase()} /> },
     { key: 'gpus', header: '사용 GPU', width: pixel(96), renderCell: (r: Row) => <Text hasTabularNumbers>{r.gpus}개</Text> },
     { key: 'progress', header: '진행', width: proportional(2, { minWidth: 200 }), renderCell: (r: Row) => r.kind === 'upload' ? <UploadProgress upload={r.upload} /> : <RowProgress job={r.job} /> },
     { key: 'status', header: '상태', width: pixel(130), renderCell: (r: Row) => r.kind === 'upload' ? <StateBadge state={uploadUiState(r.upload.state)} label={UPLOAD_LABEL[r.upload.state]} /> : <StateBadge state={uiState(r.job.status)} label={STATUS_LABEL[r.job.status]} /> },

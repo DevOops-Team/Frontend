@@ -79,7 +79,7 @@ export function RunOverview({ job, events, files, onBack, onChanged }: { job: Jo
               <Heading level={1} maxLines={1}><span title={job.name}>{job.name}</span></Heading>
             </VStack>
           </StackItem>
-          <HStack gap={2} vAlign="center"><Badge variant="neutral" label={job.strategy.toUpperCase()} /><Badge variant="neutral" label={`GPU ${job.gpus}개`} /><StateBadge state={state} label={STATUS_LABEL[job.status]} />
+          <HStack gap={2} vAlign="center"><Badge variant="neutral" label={job.strategy.toUpperCase()} />{job.finetune === 'qlora' && <Badge variant="neutral" label="QLoRA" />}<Badge variant="neutral" label={`GPU ${job.gpus}개`} /><StateBadge state={state} label={STATUS_LABEL[job.status]} />
             <StopJobButton job={job} size="md" onStopped={() => onChanged?.()} />
             <RestartJobButton job={job} size="md" onRestarted={() => onChanged?.()} /></HStack>
         </HStack>
@@ -126,7 +126,8 @@ export function RunOverview({ job, events, files, onBack, onChanged }: { job: Jo
           <MetadataList>
             <MetadataListItem label="학습 모델"><Text type="code"><span title={job.model}>{job.model}</span></Text></MetadataListItem>
             <MetadataListItem label="업로드 위치"><Text type="code"><span title={cfg?.dataset.uri}>{cfg?.dataset.uri ?? '-'}</span></Text></MetadataListItem>
-            <MetadataListItem label="학습 방식">{job.strategy.toUpperCase()}</MetadataListItem>
+            <MetadataListItem label="분산 방식">{job.strategy.toUpperCase()}</MetadataListItem>
+            <MetadataListItem label="학습 방식">{job.finetune === 'qlora' ? 'QLoRA' : 'Full'}</MetadataListItem>
             <MetadataListItem label="사용 GPU">{job.gpus}개</MetadataListItem>
             <MetadataListItem label="큐"><Text type="code">{job.queue}</Text></MetadataListItem>
             {cfg ? <MetadataListItem label="batch_size_per_gpu">{cfg.batch_size_per_gpu}</MetadataListItem> : null}
