@@ -20,6 +20,7 @@ export interface UploadRequest {
 export interface UploadSummary {
   name: string;
   strategy: string;
+  finetune?: string; // full · qlora (GPU-262)
   gpus: number;
   model: { folder: string; count: number; bytes: number };
   data: { count: number; bytes: number };
@@ -47,6 +48,7 @@ function summarize(r: UploadRequest): UploadSummary {
   return {
     name: r.name,
     strategy: r.spec.strategy,
+    finetune: r.spec.finetune,
     gpus: r.spec.gpus,
     model: { folder: r.model.folder, count: r.model.files.length, bytes: sum(r.model.files) },
     data: { count: r.data.length, bytes: sum(r.data) },

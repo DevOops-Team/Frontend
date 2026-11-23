@@ -17,11 +17,11 @@ import { Step, Stepper } from '@astryxdesign/core/Stepper';
 import { Heading, Text } from '@astryxdesign/core/Text';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { buildSpec, errorMessage, getOptions, type UploadFile } from '../api';
-import type { TrainingOptions } from '../types';
+import type { FinetuneOption, TrainingOptions } from '../types';
 import { formatBytes } from '../lib/format';
 import { parseHyperparameters, rangeText } from '../lib/hyperparameters';
 import { Icon } from '@/shared/ui/Icon';
-import { checkpointInterval, formatDuration, pickData, pickModel, pickTrain, type PickedFile } from '../lib/upload';
+import { checkpointInterval, checkpointWriters, formatDuration, pickData, pickModel, pickTrain, readTensorShapes, savedParams, type PickedFile } from '../lib/upload';
 import { uploads } from '../uploads';
 
 const NAME = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -29,6 +29,12 @@ const STRATEGY_TEXT: Record<string, { tag: string; title: string; body: string; 
   fsdp: { tag: '메모리 절약', title: '모델을 여러 GPU에 나눠 담을 때', body: '모델을 나눠 GPU 메모리를 절약합니다.', choice: '큰 모델을 여러 GPU에 나눠 담습니다.' },
   ddp: { tag: '적은 GPU', title: '모델이 GPU 한 장에 들어갈 때', body: '같은 모델로 데이터를 나눠 학습합니다.', choice: '모델을 GPU마다 복사하고 데이터를 나눠 학습합니다.' },
 };
+// 학습 방식 (GPU-262). QLoRA는 train.py가 config.json finetune을 읽어야 한다 (기본 train.py의 fit()은 Full만).
+const FINETUNE_TEXT: Record<string, { label: string; tag: string; title: string; body: string }> = {
+  full: { label: 'Full', tag: '모든 파라미터', title: '모델 전체를 학습할 때', body: '모든 가중치를 학습합니다. 체크포인트에 모델 전체와 옵티마이저가 들어갑니다.' },
+  qlora: { label: 'QLoRA', tag: '4bit + 어댑터', title: '큰 모델을 적은 GPU 메모리로', body: '기본 가중치는 4bit로 얼리고 LoRA 어댑터만 학습합니다. 체크포인트가 작습니다. config.json finetune을 읽는 train.py가 필요합니다.' },
+};
+const finetuneLabel = (name: string | undefined) => FINETUNE_TEXT[name ?? 'full']?.label ?? (name ?? 'full');
 
 interface Chosen<T> { pick: T; uploads: UploadFile[] }
 
@@ -54,13 +60,18 @@ export function CreatePipeline({ onSubmitted, onCancel }: { onSubmitted: (upload
   const [data, setData] = useState<Chosen<ReturnType<typeof pickData>> | null>(null);
   const [train, setTrain] = useState<{ pick: ReturnType<typeof pickTrain>; upload: UploadFile | null } | null>(null);
   const [strategy, setStrategy] = useState('');
+  const [finetune, setFinetune] = useState('full');
+  // 모델 safetensors 헤더에서 읽은 텐서 모양: undefined = 읽는 중 · 아직 없음, null = 읽을 수 없음
+  const [shapes, setShapes] = useState<Record<string, number[]> | null | undefined>(undefined);
   const [gpus, setGpus] = useState(0);
   const [hyper, setHyper] = useState<Record<string, string>>({});
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [step, setStep] = useState(0);
   const [issue, setIssue] = useState('');
   const folderInput = useRef<HTMLInputElement>(null);
+  const shapesFor = useRef(0); // 폴더를 다시 고르면 앞선 헤더 읽기 결과는 버린다
   const strategyGroup = useId();
+  const finetuneGroup = useId();
   const isWide = useMediaQuery('(min-width: 1100px)');
 
   useEffect(() => {
@@ -69,12 +80,17 @@ export function CreatePipeline({ onSubmitted, onCancel }: { onSubmitted: (upload
       if (!live) return;
       setOptions(o);
       setStrategy(o.defaultStrategy);
+      setFinetune(o.defaultFinetune ?? 'full');
       setGpus(o.gpus.default);
     }).catch((e: unknown) => { if (live) setLoadError(errorMessage(e)); });
     return () => { live = false; };
   }, []);
 
   const limits = options?.limits ?? { maxModelBytes: 0, maxDataBytes: 0, maxTrainBytes: 0, maxFiles: 0 };
+  // 옛 백엔드(finetunes 없음)는 Full만
+  const finetunes: FinetuneOption[] = options?.finetunes ?? [{ name: 'full', strategies: (options?.strategies ?? []).map((s) => s.name) }];
+  const finetuneInfo = finetunes.find((f) => f.name === finetune);
+  const allowed = (f: FinetuneOption, st: string) => f.strategies.includes(st);
   const strategyInfo = options?.strategies.find((s) => s.name === strategy);
   const minGpus = strategyInfo?.minGpus ?? 1;
   const strategyText = STRATEGY_TEXT[strategy] ?? { tag: '', title: strategy, body: '', choice: '' };
@@ -84,15 +100,26 @@ export function CreatePipeline({ onSubmitted, onCancel }: { onSubmitted: (upload
   }));
   const parsed = parseHyperparameters(options?.hyperparameters ?? [], hyper);
   const nameError = name.trim() && !NAME.test(name.trim()) ? '학습 이름은 1~63자의 소문자 · 숫자 · 하이픈만 쓸 수 있습니다.' : '';
-  const ckpt = model && options ? checkpointInterval(model.pick.bytes, options.checkpoint) : null;
+  // 저장 간격 미리보기 (GPU-261, 백엔드와 같은 계산). 텐서 모양을 못 읽으면 Full은 폴더 크기 ÷ 2(16bit)로, QLoRA는 보여 주지 않는다
+  const params = shapes ? savedParams(shapes, finetuneInfo?.lora ?? null) : shapes === null && finetune === 'full' && model ? model.pick.bytes / 2 : 0;
+  const ckpt = params > 0 && options?.checkpoint.bytesPerParam ? checkpointInterval(params, checkpointWriters(strategy, gpus), options.checkpoint) : null;
+  const qloraProblem = finetune === 'qlora' && shapes === null ? 'QLoRA는 safetensors 모델 폴더만 쓸 수 있습니다 (텐서 모양으로 어댑터 크기를 계산합니다).'
+    : finetune === 'qlora' && shapes && params === 0 ? `QLoRA 대상 층(${finetuneInfo?.lora?.target_modules.join(', ')})이 모델에 없습니다.` : '';
   const changed = Object.entries(parsed.values);
   const fileCount = (model?.pick.files.length ?? 0) + (data?.pick.files.length ?? 0) + (train?.upload ? 1 : 0);
 
   function chooseModel(list: FileList | File | File[] | null) {
     const { picked, byPath } = toPicked(list, true);
     const pick = pickModel(picked, limits);
-    setModel({ pick, uploads: pick.files.map((f) => ({ path: f.path, file: byPath.get(f.path) as File })) });
+    const files = pick.files.map((f) => ({ path: f.path, file: byPath.get(f.path) as File }));
+    setModel({ pick, uploads: files });
     setIssue('');
+    // 저장 간격 미리보기 · QLoRA 어댑터 크기용 텐서 모양 (safetensors 헤더만 읽음, GPU-261)
+    const token = ++shapesFor.current;
+    setShapes(undefined);
+    readTensorShapes(files.filter((u) => u.path.endsWith('.safetensors')).map((u) => u.file))
+      .then((s) => { if (token === shapesFor.current) setShapes(s); })
+      .catch(() => { if (token === shapesFor.current) setShapes(null); });
   }
 
   function chooseData(list: FileList | File | File[] | null) {
@@ -111,6 +138,8 @@ export function CreatePipeline({ onSubmitted, onCancel }: { onSubmitted: (upload
 
   function chooseStrategy(next: string) {
     setStrategy(next);
+    // 고른 학습 방식을 이 분산 방식에서 못 쓰면 기본값으로 (QLoRA → DDP)
+    if (finetuneInfo && !allowed(finetuneInfo, next)) setFinetune(options?.defaultFinetune ?? 'full');
     const needed = options?.strategies.find((s) => s.name === next)?.minGpus ?? 1;
     if (options && gpus < needed) setGpus(options.gpus.options.find((n) => n >= needed && n <= options.gpus.max) ?? options.gpus.default);
   }
@@ -120,7 +149,8 @@ export function CreatePipeline({ onSubmitted, onCancel }: { onSubmitted: (upload
     setIssue('');
     onSubmitted(uploads.start({
       name: name.trim() || `${model.pick.folder}-(자동)`,
-      spec: buildSpec({ name, strategy, gpus }, parsed.values),
+      // 옛 백엔드(finetunes 없음)는 spec의 모르는 칸을 거절하므로 보내지 않는다
+      spec: buildSpec({ name, strategy, finetune: options?.finetunes ? finetune : undefined, gpus }, parsed.values),
       model: { folder: model.pick.folder, files: model.uploads },
       data: data.uploads,
       train: train.upload,
@@ -135,6 +165,7 @@ export function CreatePipeline({ onSubmitted, onCancel }: { onSubmitted: (upload
     }
     if (step === 1 && (!data || data.pick.errors.length > 0)) { setIssue(data?.pick.errors.join(' ') ?? '학습 데이터(.jsonl)를 선택해 주세요.'); return; }
     if (step === 2 && (!train || train.pick.errors.length > 0)) { setIssue(train?.pick.errors.join(' ') ?? '학습 코드(.py) 파일 하나를 선택해 주세요.'); return; }
+    if (step === 3 && qloraProblem) { setIssue(qloraProblem); return; }
     if (step === 3 && parsed.errors.length > 0) { setAdvancedOpen(true); setIssue(parsed.errors.join(' ')); return; }
     if (step === 3 && fileCount > limits.maxFiles) { setIssue(`파일이 너무 많습니다 (최대 ${limits.maxFiles}개).`); return; }
     if (step === 4) { submit(); return; }
@@ -146,7 +177,7 @@ export function CreatePipeline({ onSubmitted, onCancel }: { onSubmitted: (upload
     { label: '모델', description: 'Hugging Face 폴더' },
     { label: '데이터', description: '.jsonl 파일' },
     { label: '학습 코드', description: 'train.py' },
-    { label: '방식·GPU', description: 'FSDP 또는 DDP' },
+    { label: '방식·GPU', description: '분산 · 학습 방식' },
     { label: '최종 확인', description: '업로드하고 시작' },
   ];
   const problem = loadError || issue;
@@ -188,8 +219,9 @@ export function CreatePipeline({ onSubmitted, onCancel }: { onSubmitted: (upload
       {train?.upload && <Text type="supporting">{formatBytes(train.upload.file.size)}, train.py로 저장</Text>}
     </VStack>}
     {step === 3 && <VStack gap={4}>
-      <VStack gap={1}><Heading level={2}>학습 방식과 GPU를 선택하세요</Heading><Text color="secondary">큰 모델은 FSDP, GPU 한 장에 들어가는 모델은 DDP를 고르세요.</Text></VStack>
-      <Grid columns={{ minWidth: 240 }} gap={3} role="radiogroup" aria-label="학습 방식">
+      <VStack gap={1}><Heading level={2}>학습 방식과 GPU를 선택하세요</Heading><Text color="secondary">큰 모델은 FSDP, GPU 한 장에 들어가는 모델은 DDP를 고르세요. 모델 전체를 학습하면 Full, 큰 모델의 어댑터만 학습하면 QLoRA입니다.</Text></VStack>
+      <Heading level={3}>분산 방식</Heading>
+      <Grid columns={{ minWidth: 240 }} gap={3} role="radiogroup" aria-label="분산 방식">
         {(options?.strategies ?? []).map((s, i) => {
           const text = STRATEGY_TEXT[s.name] ?? strategyText;
           const id = `${strategyGroup}-${i}`;
@@ -204,6 +236,27 @@ export function CreatePipeline({ onSubmitted, onCancel }: { onSubmitted: (upload
           </Card>;
         })}
       </Grid>
+      <Heading level={3}>학습 방식</Heading>
+      <Grid columns={{ minWidth: 240 }} gap={3} role="radiogroup" aria-label="학습 방식">
+        {finetunes.map((f, i) => {
+          const text = FINETUNE_TEXT[f.name] ?? { label: f.name, tag: '', title: f.name, body: '' };
+          const id = `${finetuneGroup}-${i}`;
+          const reason = allowed(f, strategy) ? '' : `${f.strategies.map((s) => s.toUpperCase()).join(' · ')}에서만`;
+          return <Card key={f.name} className="strategy-card" padding={4}>
+            <input id={id} className="strategy-card-input" type="radio" name={finetuneGroup} checked={finetune === f.name} disabled={Boolean(reason)}
+              aria-label={text.label} aria-describedby={`${id}-description`} onChange={() => { setFinetune(f.name); setIssue(''); }} />
+            <label className="strategy-card-hit-area" htmlFor={id} />
+            <VStack gap={2}>
+              <HStack gap={2} vAlign="center"><Heading level={3}>{text.label}</Heading><Badge variant="neutral" label={reason || text.tag} /></HStack>
+              <VStack gap={2} id={`${id}-description`}>
+                <Text weight="medium">{text.title}</Text><Text type="supporting">{text.body}</Text>
+                {f.lora && <Text type="supporting">LoRA r {f.lora.r} · alpha {f.lora.alpha} · {f.lora.target_modules.join(' · ')}</Text>}
+              </VStack>
+            </VStack>
+          </Card>;
+        })}
+      </Grid>
+      {ckpt ? <Text type="supporting">체크포인트 약 {formatDuration(ckpt.intervalSeconds)}마다 (저장 파라미터 {(params / 1e6).toFixed(1)}M, 저장 약 {formatDuration(ckpt.saveSeconds)})</Text> : null}
       <Selector label="총 GPU 개수 (노드당 1개)" value={String(gpus)} onChange={(v) => setGpus(Number(v))} width={320} options={gpuOptions.map(({ n, reason }) => ({ value: String(n), label: `${n}개${reason ? ` (${reason})` : ''}`, disabled: Boolean(reason) }))} />
       <Collapsible trigger={<Text weight="medium">상세 설정</Text>} isOpen={advancedOpen} onOpenChange={setAdvancedOpen}>
         <VStack gap={3} paddingBlockStart={2}>
@@ -216,7 +269,7 @@ export function CreatePipeline({ onSubmitted, onCancel }: { onSubmitted: (upload
       <VStack gap={1}><Heading level={2}>이 설정으로 학습을 시작할까요?</Heading><Text color="secondary">파일을 S3로 올린 뒤 학습을 시작합니다. 올리는 동안 다른 화면으로 가도 되고, 개요의 학습 목록에서 진행을 확인하거나 취소할 수 있습니다.</Text></VStack>
       <MetadataList columns="multi">
         <MetadataListItem label="학습 이름">{name.trim() || `${model?.pick.folder ?? ''}-(자동)`}</MetadataListItem>
-        <MetadataListItem label="방식, GPU">{strategy.toUpperCase()} · {gpus}개</MetadataListItem>
+        <MetadataListItem label="방식, GPU">{strategy.toUpperCase()} · {finetuneLabel(finetune)} · {gpus}개</MetadataListItem>
         <MetadataListItem label="모델">{model?.pick.folder} ({formatBytes(model?.pick.bytes ?? 0)})</MetadataListItem>
         <MetadataListItem label="데이터">파일 {data?.pick.files.length}개 ({formatBytes(data?.pick.bytes ?? 0)})</MetadataListItem>
         <MetadataListItem label="학습 코드">{train?.upload?.path} ({formatBytes(train?.upload?.file.size ?? 0)})</MetadataListItem>
@@ -250,7 +303,8 @@ export function CreatePipeline({ onSubmitted, onCancel }: { onSubmitted: (upload
         <Heading level={2}>실행 전 요약</Heading>
         <Text type="supporting">{strategyText.choice}</Text>
         <MetadataList>
-          <MetadataListItem label="학습 방식">{strategy.toUpperCase()}</MetadataListItem>
+          <MetadataListItem label="분산 방식">{strategy.toUpperCase()}</MetadataListItem>
+          <MetadataListItem label="학습 방식">{finetuneLabel(finetune)}</MetadataListItem>
           <MetadataListItem label="전체 GPU">{gpus}개</MetadataListItem>
           <MetadataListItem label="모델">{model?.pick.folder || '-'}</MetadataListItem>
           <MetadataListItem label="업로드">{formatBytes((model?.pick.bytes ?? 0) + (data?.pick.bytes ?? 0) + (train?.upload?.file.size ?? 0))}</MetadataListItem>

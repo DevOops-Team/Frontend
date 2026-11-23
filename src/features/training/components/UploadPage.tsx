@@ -55,7 +55,7 @@ function UploadOverview({ upload, onBack }: { upload: PendingUpload; onBack: () 
               <Heading level={1} maxLines={1}><span title={s.name}>{s.name}</span></Heading>
             </VStack>
           </StackItem>
-          <HStack gap={2} vAlign="center"><Badge variant="neutral" label={s.strategy.toUpperCase()} /><Badge variant="neutral" label={`GPU ${s.gpus}개`} /><StateBadge state={uploadUiState(upload.state)} label={UPLOAD_LABEL[upload.state]} /></HStack>
+          <HStack gap={2} vAlign="center"><Badge variant="neutral" label={s.strategy.toUpperCase()} />{s.finetune === 'qlora' && <Badge variant="neutral" label="QLoRA" />}<Badge variant="neutral" label={`GPU ${s.gpus}개`} /><StateBadge state={uploadUiState(upload.state)} label={UPLOAD_LABEL[upload.state]} /></HStack>
         </HStack>
       </LayoutHeader>}
       content={<LayoutContent>

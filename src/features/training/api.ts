@@ -130,13 +130,14 @@ export function createJob(spec: SubmitSpec, model: UploadFile[], data: UploadFil
 export interface JobForm {
   name: string;
   strategy: string;
+  finetune?: string; // full · qlora (GPU-262)
   gpus: number;
 }
 
 // 입력하지 않은 값: 이름은 백엔드가 {모델 폴더}-{id}로 짓고, 바꾸지 않은 hyperparameters는 기본값을 쓴다.
 export function buildSpec(f: JobForm, hyperparameters: Record<string, number | null> = {}): SubmitSpec {
   const name = f.name.trim();
-  return { ...(name ? { name } : {}), strategy: f.strategy, gpus: f.gpus, hyperparameters };
+  return { ...(name ? { name } : {}), strategy: f.strategy, ...(f.finetune ? { finetune: f.finetune } : {}), gpus: f.gpus, hyperparameters };
 }
 
 // 화면이 더 읽지 않아도 되는 상태. STOPPING은 곧 CANCELLED가 되므로 계속 읽는다.
