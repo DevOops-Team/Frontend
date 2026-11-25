@@ -100,13 +100,16 @@ export function CreatePipeline({ onSubmitted, onCancel }: { onSubmitted: (upload
   }));
   const parsed = parseHyperparameters(options?.hyperparameters ?? [], hyper);
   const nameError = name.trim() && !NAME.test(name.trim()) ? '학습 이름은 1~63자의 소문자 · 숫자 · 하이픈만 쓸 수 있습니다.' : '';
+  // 이 이름이면 S3에 올려 둔 고정 데이터셋(모델 · 데이터 · train.py)으로 낸다: 모델 · 데이터 · 학습 코드 단계를 건너뛴다 (GPU-160)
+  const named = options?.namedDatasets?.find((d) => d.name === name.trim()) ?? null;
+  const namedPath = named ? `datasets/${named.id}/v${named.version}/` : '';
   // 저장 간격 미리보기 (GPU-261, 백엔드와 같은 계산). 텐서 모양을 못 읽으면 Full은 폴더 크기 ÷ 2(16bit)로, QLoRA는 보여 주지 않는다
-  const params = shapes ? savedParams(shapes, finetuneInfo?.lora ?? null) : shapes === null && finetune === 'full' && model ? model.pick.bytes / 2 : 0;
+  const params = named ? 0 : shapes ? savedParams(shapes, finetuneInfo?.lora ?? null) : shapes === null && finetune === 'full' && model ? model.pick.bytes / 2 : 0;
   const ckpt = params > 0 && options?.checkpoint.bytesPerParam ? checkpointInterval(params, checkpointWriters(strategy, gpus), options.checkpoint) : null;
-  const qloraProblem = finetune === 'qlora' && shapes === null ? 'QLoRA는 safetensors 모델 폴더만 쓸 수 있습니다 (텐서 모양으로 어댑터 크기를 계산합니다).'
+  const qloraProblem = named ? '' : finetune === 'qlora' && shapes === null ? 'QLoRA는 safetensors 모델 폴더만 쓸 수 있습니다 (텐서 모양으로 어댑터 크기를 계산합니다).'
     : finetune === 'qlora' && shapes && params === 0 ? `QLoRA 대상 층(${finetuneInfo?.lora?.target_modules.join(', ')})이 모델에 없습니다.` : '';
   const changed = Object.entries(parsed.values);
-  const fileCount = (model?.pick.files.length ?? 0) + (data?.pick.files.length ?? 0) + (train?.upload ? 1 : 0);
+  const fileCount = named ? 0 : (model?.pick.files.length ?? 0) + (data?.pick.files.length ?? 0) + (train?.upload ? 1 : 0);
 
   function chooseModel(list: FileList | File | File[] | null) {
     const { picked, byPath } = toPicked(list, true);
@@ -145,12 +148,18 @@ export function CreatePipeline({ onSubmitted, onCancel }: { onSubmitted: (upload
   }
 
   function submit() {
+    const spec = buildSpec({ name, strategy, finetune: options?.finetunes ? finetune : undefined, gpus }, parsed.values);
+    if (named) {
+      setIssue('');
+      onSubmitted(uploads.start({ name: named.name, spec: { ...spec, dataset: { id: named.id, version: named.version } }, model: { folder: named.id, files: [] }, data: [], train: null }));
+      return;
+    }
     if (!model || !data || !train?.upload) return;
     setIssue('');
     onSubmitted(uploads.start({
       name: name.trim() || `${model.pick.folder}-(자동)`,
       // 옛 백엔드(finetunes 없음)는 spec의 모르는 칸을 거절하므로 보내지 않는다
-      spec: buildSpec({ name, strategy, finetune: options?.finetunes ? finetune : undefined, gpus }, parsed.values),
+      spec,
       model: { folder: model.pick.folder, files: model.uploads },
       data: data.uploads,
       train: train.upload,
@@ -161,6 +170,7 @@ export function CreatePipeline({ onSubmitted, onCancel }: { onSubmitted: (upload
     if (step === 0) {
       if (!options) { setIssue(loadError || '설정을 불러오는 중입니다.'); return; }
       if (nameError) { setIssue(nameError); return; }
+      if (named) { setIssue(''); setStep(3); return; }
       if (!model || model.pick.errors.length > 0) { setIssue(model?.pick.errors.join(' ') ?? '모델 폴더를 선택해 주세요.'); return; }
     }
     if (step === 1 && (!data || data.pick.errors.length > 0)) { setIssue(data?.pick.errors.join(' ') ?? '학습 데이터(.jsonl)를 선택해 주세요.'); return; }
@@ -187,16 +197,17 @@ export function CreatePipeline({ onSubmitted, onCancel }: { onSubmitted: (upload
       <VStack gap={1}><Heading level={2}>어떤 모델을 학습할까요?</Heading><Text color="secondary">config.json이 들어 있는 Hugging Face 모델 폴더를 통째로 고르세요.</Text></VStack>
       <Grid columns={{ minWidth: 260 }} gap={4}>
         <TextInput label="학습 이름" isOptional placeholder="예: gpt2-demo" value={name} onChange={(v) => setName(v)} description="소문자, 숫자, 하이픈. 비워 두면 폴더 이름" status={nameError ? { type: 'error', message: nameError } : undefined} />
-        <Field label="모델 폴더" inputID="model-folder" description={`최대 ${formatBytes(limits.maxModelBytes)}`}>
+        {!named && <Field label="모델 폴더" inputID="model-folder" description={`최대 ${formatBytes(limits.maxModelBytes)}`}>
           <HStack gap={2} vAlign="center">
             <Button label="폴더 선택" variant="secondary" icon={<Icon name="layers" size={16} />} onClick={() => folderInput.current?.click()} />
             <Text color="secondary" maxLines={1}>{model?.pick.folder || '선택한 폴더 없음'}</Text>
           </HStack>
           <input ref={folderInput} id="model-folder" aria-label="모델 폴더" type="file" hidden {...{ webkitdirectory: '', directory: '' }} multiple onChange={(e) => chooseModel(e.target.files)} />
-        </Field>
+        </Field>}
       </Grid>
+      {named && <Banner status="info" title="S3에 올려 둔 데이터셋으로 학습합니다" description={`S3 ${namedPath}의 모델 · 학습 데이터 · 학습 코드를 그대로 씁니다. 모델 · 데이터 · 학습 코드 단계를 건너뛰고 학습 방식만 고릅니다.`} />}
       {!options && !loadError && <HStack gap={2} vAlign="center"><Spinner size="sm" /><Text color="secondary">설정을 불러오는 중입니다.</Text></HStack>}
-      {model && model.pick.files.length > 0 && <Card padding={0}>
+      {!named && model && model.pick.files.length > 0 && <Card padding={0}>
         <List density="compact" hasDividers header={<HStack paddingInline={4} paddingBlock={3} vAlign="center"><StackItem size="fill"><Text weight="medium">{model.pick.folder}</Text></StackItem><Text type="supporting" hasTabularNumbers>파일 {model.pick.files.length}개, {formatBytes(model.pick.bytes)}</Text></HStack>}>
           {model.pick.files.slice(0, 8).map((f) => <ListItem key={f.path} label={<Text type="code">{f.path.slice(model.pick.folder.length + 1)}</Text>} endContent={<Text type="supporting" hasTabularNumbers>{formatBytes(f.size)}</Text>} />)}
           {model.pick.files.length > 8 && <ListItem label={`외 ${model.pick.files.length - 8}개`} />}
@@ -266,13 +277,14 @@ export function CreatePipeline({ onSubmitted, onCancel }: { onSubmitted: (upload
       </Collapsible>
     </VStack>}
     {step === 4 && <VStack gap={4}>
-      <VStack gap={1}><Heading level={2}>이 설정으로 학습을 시작할까요?</Heading><Text color="secondary">파일을 S3로 올린 뒤 학습을 시작합니다. 올리는 동안 다른 화면으로 가도 되고, 개요의 학습 목록에서 진행을 확인하거나 취소할 수 있습니다.</Text></VStack>
+      <VStack gap={1}><Heading level={2}>이 설정으로 학습을 시작할까요?</Heading><Text color="secondary">{named ? `파일을 올리지 않고 S3 ${namedPath}에 있는 모델 · 데이터 · 학습 코드로 학습을 시작합니다.` : '파일을 S3로 올린 뒤 학습을 시작합니다. 올리는 동안 다른 화면으로 가도 되고, 개요의 학습 목록에서 진행을 확인하거나 취소할 수 있습니다.'}</Text></VStack>
       <MetadataList columns="multi">
         <MetadataListItem label="학습 이름">{name.trim() || `${model?.pick.folder ?? ''}-(자동)`}</MetadataListItem>
+        {named && <MetadataListItem label="데이터셋"><Text type="code">S3 {namedPath}</Text></MetadataListItem>}
         <MetadataListItem label="방식, GPU">{strategy.toUpperCase()} · {finetuneLabel(finetune)} · {gpus}개</MetadataListItem>
-        <MetadataListItem label="모델">{model?.pick.folder} ({formatBytes(model?.pick.bytes ?? 0)})</MetadataListItem>
-        <MetadataListItem label="데이터">파일 {data?.pick.files.length}개 ({formatBytes(data?.pick.bytes ?? 0)})</MetadataListItem>
-        <MetadataListItem label="학습 코드">{train?.upload?.path} ({formatBytes(train?.upload?.file.size ?? 0)})</MetadataListItem>
+        {!named && <MetadataListItem label="모델">{model?.pick.folder} ({formatBytes(model?.pick.bytes ?? 0)})</MetadataListItem>}
+        {!named && <MetadataListItem label="데이터">파일 {data?.pick.files.length}개 ({formatBytes(data?.pick.bytes ?? 0)})</MetadataListItem>}
+        {!named && <MetadataListItem label="학습 코드">{train?.upload?.path} ({formatBytes(train?.upload?.file.size ?? 0)})</MetadataListItem>}
         {ckpt ? <MetadataListItem label="체크포인트 간격">약 {formatDuration(ckpt.intervalSeconds)}마다</MetadataListItem> : null}
         <MetadataListItem label="상세 설정">{changed.length === 0 ? '기본값' : changed.map(([k, v]) => `${k} ${v}`).join(', ')}</MetadataListItem>
       </MetadataList>
@@ -285,17 +297,17 @@ export function CreatePipeline({ onSubmitted, onCancel }: { onSubmitted: (upload
     header={<LayoutHeader hasDivider>
       <VStack gap={4}>
         <Heading level={1}>새 학습 만들기</Heading>
-        <Stepper activeStep={step} label="새 학습 단계" onStepClick={(i) => { if (i < step) { setIssue(''); setStep(i); } }}>
-          {STEPS.map((s, i) => <Step key={s.label} step={i} label={s.label} description={s.description} isDisabled={i > step} />)}
+        <Stepper activeStep={step} label="새 학습 단계" onStepClick={(i) => { if (i < step && !(named && i > 0 && i < 3)) { setIssue(''); setStep(i); } }}>
+          {STEPS.map((s, i) => <Step key={s.label} step={i} label={s.label} description={s.description} isDisabled={i > step || (named !== null && i > 0 && i < 3)} />)}
         </Stepper>
       </VStack>
     </LayoutHeader>}
     content={<LayoutContent label="단계 내용">{body}</LayoutContent>}
     footer={<LayoutFooter hasDivider>
       <HStack gap={2} vAlign="center">
-        <Button label={step === 0 ? '취소' : '이전'} variant="secondary" onClick={() => { if (step === 0) onCancel(); else { setIssue(''); setStep(step - 1); } }} />
+        <Button label={step === 0 ? '취소' : '이전'} variant="secondary" onClick={() => { if (step === 0) onCancel(); else { setIssue(''); setStep(named && step === 3 ? 0 : step - 1); } }} />
         <StackItem size="fill" />
-        <Button label={['다음: 학습 데이터', '다음: 학습 코드', '다음: 학습 방식', '다음: 최종 확인', '업로드하고 학습 시작'][step]} variant="primary" onClick={next} />
+        <Button label={(named ? ['다음: 학습 방식', '', '', '다음: 최종 확인', '학습 시작'] : ['다음: 학습 데이터', '다음: 학습 코드', '다음: 학습 방식', '다음: 최종 확인', '업로드하고 학습 시작'])[step]} variant="primary" onClick={next} />
       </HStack>
     </LayoutFooter>}
     end={isWide ? <LayoutPanel hasDivider width={300} label="실행 전 요약">
@@ -306,8 +318,8 @@ export function CreatePipeline({ onSubmitted, onCancel }: { onSubmitted: (upload
           <MetadataListItem label="분산 방식">{strategy.toUpperCase()}</MetadataListItem>
           <MetadataListItem label="학습 방식">{finetuneLabel(finetune)}</MetadataListItem>
           <MetadataListItem label="전체 GPU">{gpus}개</MetadataListItem>
-          <MetadataListItem label="모델">{model?.pick.folder || '-'}</MetadataListItem>
-          <MetadataListItem label="업로드">{formatBytes((model?.pick.bytes ?? 0) + (data?.pick.bytes ?? 0) + (train?.upload?.file.size ?? 0))}</MetadataListItem>
+          <MetadataListItem label="모델">{named ? `S3 ${named.id}` : model?.pick.folder || '-'}</MetadataListItem>
+          <MetadataListItem label="업로드">{named ? '없음' : formatBytes((model?.pick.bytes ?? 0) + (data?.pick.bytes ?? 0) + (train?.upload?.file.size ?? 0))}</MetadataListItem>
         </MetadataList>
       </VStack>
     </LayoutPanel> : undefined}

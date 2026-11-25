@@ -14,7 +14,7 @@ export interface UploadRequest {
   spec: SubmitSpec;
   model: { folder: string; files: UploadFile[] };
   data: UploadFile[];
-  train: UploadFile;
+  train: UploadFile | null; // spec.dataset으로 내면 null (모델 · 데이터도 비어 있음, GPU-160)
 }
 
 export interface UploadSummary {
@@ -25,6 +25,7 @@ export interface UploadSummary {
   model: { folder: string; count: number; bytes: number };
   data: { count: number; bytes: number };
   train: { name: string; bytes: number };
+  dataset?: { id: string; version: number }; // S3 고정 데이터셋으로 낸 학습 (GPU-160)
 }
 
 // 화면에 넘기는 모양. 파일 내용(Blob)은 넣지 않는다.
@@ -40,7 +41,7 @@ export interface PendingUpload {
   jobId?: string;
 }
 
-export type Send = (spec: SubmitSpec, model: UploadFile[], data: UploadFile[], train: UploadFile, onProgress: (sent: number, total: number) => void) => Upload;
+export type Send = (spec: SubmitSpec, model: UploadFile[], data: UploadFile[], train: UploadFile | null, onProgress: (sent: number, total: number) => void) => Upload;
 
 const sum = (files: UploadFile[]) => files.reduce((n, f) => n + f.file.size, 0);
 
@@ -52,7 +53,8 @@ function summarize(r: UploadRequest): UploadSummary {
     gpus: r.spec.gpus,
     model: { folder: r.model.folder, count: r.model.files.length, bytes: sum(r.model.files) },
     data: { count: r.data.length, bytes: sum(r.data) },
-    train: { name: r.train.path, bytes: r.train.file.size },
+    train: { name: r.train?.path ?? '', bytes: r.train?.file.size ?? 0 },
+    ...(r.spec.dataset ? { dataset: r.spec.dataset } : {}),
   };
 }
 
