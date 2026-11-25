@@ -1,4 +1,5 @@
-import type { CreatedJob, FilePreview, Job, JobEvent, JobFile, JobStatus, SubmitSpec, TrainedModel, TrainingOptions } from './types';
+import type { CreatedJob, FilePreview, Job, JobEvent, JobFile, JobStatus, SubmitSpec, TrainedModel, TrainingOptions, UploadTicket } from './types';
+import { sha256Hex } from './lib/sha256';
 
 // 백엔드 API 클라이언트. 개발 서버에서는 Vite 프록시가 /api를 백엔드로 넘긴다(vite.config.ts).
 // 실패를 가짜 데이터로 덮지 않고 ApiError로 화면까지 올린다.
@@ -148,4 +149,77 @@ export function isTerminal(s: JobStatus): boolean {
 
 export function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+// 학습 제출: 브라우저 → S3 직접 업로드 (GPU-278).
+// devoops.site는 Cloudflare 프록시(요청 본문 100MB 제한)를 거치므로 모델 폴더를 /api/jobs multipart로 보낼 수 없다.
+// ① 파일마다 SHA-256 → ② POST /api/uploads(파일 목록)로 presigned PUT URL → ③ S3에 PUT(크기 · sha256이 서명돼 S3가 검증)
+// → ④ POST /api/jobs에 spec.upload.id만. 진행률은 해시 + 업로드 두 번 읽는 양(파일 크기 × 2) 기준이다.
+// /api/uploads가 없는 옛 백엔드(404)면 예전 multipart로 보낸다. 파일이 없으면(S3 고정 데이터셋) spec만 보낸다.
+export function submitJob(spec: SubmitSpec, model: UploadFile[], data: UploadFile[], train: UploadFile | null, onProgress: (sent: number, total: number) => void): Upload {
+  let aborted = false;
+  let current: { abort: () => void } | null = null;
+  const files = [
+    ...model.map((f) => ({ path: `model/${f.path}`, file: f.file })),
+    ...data.map((f) => ({ path: `data/${f.path}`, file: f.file })),
+    ...(train ? [{ path: `train/${train.path}`, file: train.file }] : []),
+  ];
+  const bytes = files.reduce((n, f) => n + f.file.size, 0);
+  const total = Math.max(1, bytes * 2);
+  const stop = () => { if (aborted) throw new ApiError('업로드를 취소했습니다.', 0, 'ABORTED'); };
+  const run = <T,>(h: { done: Promise<T>; abort: () => void }) => { current = h; return h.done; };
+
+  const done = (async (): Promise<CreatedJob> => {
+    if (files.length === 0) return run(createJob(spec, [], [], null, () => {}));
+    let hashed = 0;
+    const sums: string[] = [];
+    for (const f of files) {
+      try {
+        sums.push(await sha256Hex(f.file, (n) => { hashed += n; onProgress(hashed, total); }, () => aborted));
+      } catch (e) {
+        stop();
+        throw e;
+      }
+    }
+    stop();
+    const res = await fetch('/api/uploads', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ files: files.map((f, i) => ({ path: f.path, size: f.file.size, sha256: sums[i] })) }),
+    });
+    if (res.status === 404 || res.status === 405) return run(createJob(spec, model, data, train, onProgress)); // 옛 백엔드
+    if (!res.ok) throw await failure(res);
+    const ticket = (await res.json()) as UploadTicket;
+    const byPath = new Map(files.map((f) => [f.path, f.file]));
+    let sent = 0;
+    for (const t of ticket.files) {
+      stop();
+      const file = byPath.get(t.path);
+      if (!file) throw new ApiError(`업로드 목록에 없는 파일: ${t.path}`, 0);
+      await run(putObject(t.url, t.headers, file, (loaded) => onProgress(bytes + sent + loaded, total)));
+      sent += file.size;
+    }
+    stop();
+    onProgress(total, total);
+    return run(createJob({ ...spec, upload: { id: ticket.id } }, [], [], null, () => {}));
+  })();
+  return { done, abort: () => { aborted = true; current?.abort(); } };
+}
+
+// S3 presigned PUT 하나. 진행률 때문에 XMLHttpRequest. 서명된 헤더(x-amz-checksum-sha256)를 그대로 보낸다.
+function putObject(url: string, headers: Record<string, string>, file: Blob, onProgress: (loaded: number) => void): { done: Promise<void>; abort: () => void } {
+  const xhr = new XMLHttpRequest();
+  const done = new Promise<void>((resolve, reject) => {
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded); };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) { resolve(); return; }
+      const code = /<Code>([^<]+)<\/Code>/.exec(xhr.responseText)?.[1];
+      reject(new ApiError(`S3 업로드 실패 (HTTP ${xhr.status}${code ? `, ${code}` : ''}). URL이 만료됐으면 다시 시도하세요.`, xhr.status, code));
+    };
+    xhr.onerror = () => reject(new ApiError('S3에 연결할 수 없습니다 (네트워크 또는 버킷 CORS).', 0));
+    xhr.onabort = () => reject(new ApiError('업로드를 취소했습니다.', 0, 'ABORTED'));
+  });
+  xhr.open('PUT', url);
+  for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
+  xhr.send(file);
+  return { done, abort: () => xhr.abort() };
 }

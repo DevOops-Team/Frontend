@@ -4,13 +4,13 @@ import userEvent from '@testing-library/user-event';
 import type { UploadFile } from '../api';
 import type { CreatedJob } from '../types';
 
-// 실제 XHR 대신 테스트가 진행 · 완료 · 취소를 일으키는 가짜 createJob.
+// 실제 해시 · S3 PUT · XHR 대신 테스트가 진행 · 완료 · 취소를 일으키는 가짜 submitJob (업로드 큐의 전송 함수).
 const sends: { progress: (sent: number, total: number) => void; resolve: (j: CreatedJob) => void; abort: () => void }[] = [];
 vi.mock('../api', async (orig) => {
   const real = await orig<typeof import('../api')>();
   return {
     ...real,
-    createJob: (_s: unknown, _m: unknown, _d: unknown, _t: unknown, onProgress: (sent: number, total: number) => void) => {
+    submitJob: (_s: unknown, _m: unknown, _d: unknown, _t: unknown, onProgress: (sent: number, total: number) => void) => {
       let resolve!: (j: CreatedJob) => void;
       let reject!: (e: unknown) => void;
       const done = new Promise<CreatedJob>((res, rej) => { resolve = res; reject = rej; });
