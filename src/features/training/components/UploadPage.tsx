@@ -94,14 +94,17 @@ function UploadOverview({ upload, onBack }: { upload: PendingUpload; onBack: () 
           </Card>
           <Card padding={5}>
             <VStack gap={3} as="section" aria-labelledby="upload-files-title">
-              <Heading level={2} id="upload-files-title">올리는 파일</Heading>
-              <MetadataList>
+              <Heading level={2} id="upload-files-title">{s.dataset ? 'S3 고정 데이터셋' : '올리는 파일'}</Heading>
+              {s.dataset ? <MetadataList>
+                <MetadataListItem label="데이터셋"><Text type="code">S3 datasets/{s.dataset.id}/v{s.dataset.version}/</Text></MetadataListItem>
+                <MetadataListItem label="내용">이미 올려 둔 모델 · 학습 데이터 · 학습 코드(train.py)를 그대로 씁니다. 올리는 파일은 없습니다.</MetadataListItem>
+              </MetadataList> : <><MetadataList>
                 <MetadataListItem label="모델">{s.model.folder} · 파일 {s.model.count}개 · {formatBytes(s.model.bytes)}</MetadataListItem>
                 <MetadataListItem label="학습 데이터">파일 {s.data.count}개 · {formatBytes(s.data.bytes)}</MetadataListItem>
                 <MetadataListItem label="학습 코드"><Text type="code">{s.train.name}</Text> · {formatBytes(s.train.bytes)}</MetadataListItem>
                 <MetadataListItem label="저장 위치"><Text type="code">S3 datasets/&lt;학습 id&gt;/v1/</Text></MetadataListItem>
               </MetadataList>
-              <Text type="supporting">학습 id는 업로드가 끝나고 Backend가 학습을 만들 때 정해집니다.</Text>
+              <Text type="supporting">학습 id는 업로드가 끝나고 Backend가 학습을 만들 때 정해집니다.</Text></>}
             </VStack>
           </Card>
         </VStack>
