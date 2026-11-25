@@ -66,7 +66,11 @@ describe('submitJob (S3 직접 업로드, GPU-278)', () => {
     expect(parts).toEqual(['spec']); // 파일 파트 없음
     const spec = JSON.parse(await ((post?.body as FormData).get('spec') as Blob).text()) as { upload?: { id: string } };
     expect(spec.upload).toEqual({ id: 'a1b2c3d4' });
-    expect(progress.at(-1)?.[0]).toBe(progress.at(-1)?.[1]); // 다 보내면 100%
+    // 진행률은 S3로 보낸 바이트만: 전체 = 파일 크기 합(3 + 14 + 9), 해시 계산은 세지 않는다
+    const bytes = 3 + '{"text":"x"}\n'.length + 'print(1)\n'.length;
+    expect(progress.every(([, t]) => t === bytes)).toBe(true);
+    expect(progress.slice(0, -1).every(([s]) => s < bytes)).toBe(true); // PUT이 다 끝나기 전엔 100%가 아님
+    expect(progress.at(-1)).toEqual([bytes, bytes]);
   });
 
   it('falls back to the multipart upload when the backend has no /api/uploads', async () => {
