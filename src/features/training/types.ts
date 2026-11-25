@@ -138,6 +138,15 @@ export interface SubmitSpec {
   hyperparameters: Record<string, number | null>;
   // S3 고정 데이터셋 datasets/<id>/v<version>/ (GPU-200 · GPU-160). 있으면 파일 파트를 보내지 않는다
   dataset?: { id: string; version: number };
+  // POST /api/uploads로 S3에 직접 올린 업로드 (GPU-278). 있으면 파일 파트를 보내지 않는다
+  upload?: { id: string };
+}
+
+// POST /api/uploads (GPU-278): 파일마다 presigned PUT. headers는 서명된 값이라 그대로 보낸다
+export interface UploadTicket {
+  id: string;
+  expiresAt: string;
+  files: { path: string; url: string; headers: Record<string, string> }[];
 }
 
 export interface CreatedJob {
