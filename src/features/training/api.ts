@@ -154,7 +154,7 @@ export function errorMessage(e: unknown): string {
 // 학습 제출: 브라우저 → S3 직접 업로드 (GPU-278).
 // devoops.site는 Cloudflare 프록시(요청 본문 100MB 제한)를 거치므로 모델 폴더를 /api/jobs multipart로 보낼 수 없다.
 // ① 파일마다 SHA-256 → ② POST /api/uploads(파일 목록)로 presigned PUT URL → ③ S3에 PUT(크기 · sha256이 서명돼 S3가 검증)
-// → ④ POST /api/jobs에 spec.upload.id만. 진행률은 해시 + 업로드 두 번 읽는 양(파일 크기 × 2) 기준이다.
+// → ④ POST /api/jobs에 spec.upload.id만. 진행률은 S3로 보낸 바이트만 센다(해시 계산은 로컬이라 보여 주지 않음).
 // /api/uploads가 없는 옛 백엔드(404)면 예전 multipart로 보낸다. 파일이 없으면(S3 고정 데이터셋) spec만 보낸다.
 export function submitJob(spec: SubmitSpec, model: UploadFile[], data: UploadFile[], train: UploadFile | null, onProgress: (sent: number, total: number) => void): Upload {
   let aborted = false;
@@ -165,17 +165,16 @@ export function submitJob(spec: SubmitSpec, model: UploadFile[], data: UploadFil
     ...(train ? [{ path: `train/${train.path}`, file: train.file }] : []),
   ];
   const bytes = files.reduce((n, f) => n + f.file.size, 0);
-  const total = Math.max(1, bytes * 2);
+  const total = Math.max(1, bytes);
   const stop = () => { if (aborted) throw new ApiError('업로드를 취소했습니다.', 0, 'ABORTED'); };
   const run = <T,>(h: { done: Promise<T>; abort: () => void }) => { current = h; return h.done; };
 
   const done = (async (): Promise<CreatedJob> => {
     if (files.length === 0) return run(createJob(spec, [], [], null, () => {}));
-    let hashed = 0;
     const sums: string[] = [];
     for (const f of files) {
       try {
-        sums.push(await sha256Hex(f.file, (n) => { hashed += n; onProgress(hashed, total); }, () => aborted));
+        sums.push(await sha256Hex(f.file, () => {}, () => aborted));
       } catch (e) {
         stop();
         throw e;
@@ -195,7 +194,7 @@ export function submitJob(spec: SubmitSpec, model: UploadFile[], data: UploadFil
       stop();
       const file = byPath.get(t.path);
       if (!file) throw new ApiError(`업로드 목록에 없는 파일: ${t.path}`, 0);
-      await run(putObject(t.url, t.headers, file, (loaded) => onProgress(bytes + sent + loaded, total)));
+      await run(putObject(t.url, t.headers, file, (loaded) => onProgress(Math.min(sent + loaded, total - 1), total)));
       sent += file.size;
     }
     stop();
