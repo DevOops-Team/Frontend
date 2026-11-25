@@ -1,5 +1,5 @@
 import type { CreatedJob, FilePreview, Job, JobEvent, JobFile, JobStatus, SubmitSpec, TrainedModel, TrainingOptions, UploadTicket } from './types';
-import { sha256Hex } from './lib/sha256';
+import { hashFile, type FileHash } from './lib/sha256';
 
 // 백엔드 API 클라이언트. 개발 서버에서는 Vite 프록시가 /api를 백엔드로 넘긴다(vite.config.ts).
 // 실패를 가짜 데이터로 덮지 않고 ApiError로 화면까지 올린다.
@@ -153,28 +153,35 @@ export function errorMessage(e: unknown): string {
 
 // 학습 제출: 브라우저 → S3 직접 업로드 (GPU-278).
 // devoops.site는 Cloudflare 프록시(요청 본문 100MB 제한)를 거치므로 모델 폴더를 /api/jobs multipart로 보낼 수 없다.
-// ① 파일마다 SHA-256 → ② POST /api/uploads(파일 목록)로 presigned PUT URL → ③ S3에 PUT(크기 · sha256이 서명돼 S3가 검증)
-// → ④ POST /api/jobs에 spec.upload.id만. 진행률은 S3로 보낸 바이트만 센다(해시 계산은 로컬이라 보여 주지 않음).
-// /api/uploads가 없는 옛 백엔드(404)면 예전 multipart로 보낸다. 파일이 없으면(S3 고정 데이터셋) spec만 보낸다.
+// ① 파일마다 SHA-256(큰 파일은 64MiB 조각마다도) → ② POST /api/uploads로 presigned URL(작은 파일은 PUT 하나,
+// 큰 파일은 S3 multipart 조각마다) → ③ S3에 PUT: 최대 4개 동시, 실패한 PUT만 다시(3번까지) → ④ POST /api/jobs에
+// spec.upload.id만(Backend가 multipart를 확인 · 완료). 진행률은 S3로 보낸 바이트만 센다(해시는 로컬이라 보여 주지 않음).
+// /api/uploads가 없는 옛 백엔드(404)면 예전 multipart/form-data로 보낸다. 파일이 없으면(S3 고정 데이터셋) spec만 보낸다.
+export const PART_BYTES = 64 << 20;
+const PUT_CONCURRENCY = 4;
+const PUT_ATTEMPTS = 3;
+
 export function submitJob(spec: SubmitSpec, model: UploadFile[], data: UploadFile[], train: UploadFile | null, onProgress: (sent: number, total: number) => void): Upload {
   let aborted = false;
-  let current: { abort: () => void } | null = null;
+  const active = new Set<{ abort: () => void }>();
   const files = [
     ...model.map((f) => ({ path: `model/${f.path}`, file: f.file })),
     ...data.map((f) => ({ path: `data/${f.path}`, file: f.file })),
     ...(train ? [{ path: `train/${train.path}`, file: train.file }] : []),
   ];
-  const bytes = files.reduce((n, f) => n + f.file.size, 0);
-  const total = Math.max(1, bytes);
+  const total = Math.max(1, files.reduce((n, f) => n + f.file.size, 0));
   const stop = () => { if (aborted) throw new ApiError('업로드를 취소했습니다.', 0, 'ABORTED'); };
-  const run = <T,>(h: { done: Promise<T>; abort: () => void }) => { current = h; return h.done; };
+  const track = <T,>(h: { done: Promise<T>; abort: () => void }) => {
+    active.add(h);
+    return h.done.finally(() => active.delete(h));
+  };
 
   const done = (async (): Promise<CreatedJob> => {
-    if (files.length === 0) return run(createJob(spec, [], [], null, () => {}));
-    const sums: string[] = [];
+    if (files.length === 0) return track(createJob(spec, [], [], null, () => {}));
+    const hashes: FileHash[] = [];
     for (const f of files) {
       try {
-        sums.push(await sha256Hex(f.file, () => {}, () => aborted));
+        hashes.push(await hashFile(f.file, () => aborted, PART_BYTES));
       } catch (e) {
         stop();
         throw e;
@@ -183,29 +190,63 @@ export function submitJob(spec: SubmitSpec, model: UploadFile[], data: UploadFil
     stop();
     const res = await fetch('/api/uploads', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ files: files.map((f, i) => ({ path: f.path, size: f.file.size, sha256: sums[i] })) }),
+      body: JSON.stringify({ partBytes: PART_BYTES, files: files.map((f, i) => ({ path: f.path, size: f.file.size, ...hashes[i] })) }),
     });
-    if (res.status === 404 || res.status === 405) return run(createJob(spec, model, data, train, onProgress)); // 옛 백엔드
+    if (res.status === 404 || res.status === 405) return track(createJob(spec, model, data, train, onProgress)); // 옛 백엔드
     if (!res.ok) throw await failure(res);
     const ticket = (await res.json()) as UploadTicket;
+
+    // PUT 할 일: 작은 파일은 통째로, multipart 파일은 조각마다 (Blob.slice라 메모리에 복사하지 않음)
     const byPath = new Map(files.map((f) => [f.path, f.file]));
-    let sent = 0;
+    const puts: { url: string; headers: Record<string, string>; body: Blob }[] = [];
     for (const t of ticket.files) {
-      stop();
       const file = byPath.get(t.path);
       if (!file) throw new ApiError(`업로드 목록에 없는 파일: ${t.path}`, 0);
-      await run(putObject(t.url, t.headers, file, (loaded) => onProgress(Math.min(sent + loaded, total - 1), total)));
-      sent += file.size;
+      if (t.parts?.length) {
+        for (const p of t.parts) puts.push({ url: p.url, headers: p.headers, body: file.slice((p.number - 1) * PART_BYTES, (p.number - 1) * PART_BYTES + p.size) });
+      } else if (t.url) {
+        puts.push({ url: t.url, headers: t.headers ?? {}, body: file });
+      }
+    }
+    const loaded = new Array<number>(puts.length).fill(0);
+    const report = () => onProgress(Math.min(loaded.reduce((a, b) => a + b, 0), total - 1), total);
+    let next = 0;
+    const worker = async () => {
+      while (next < puts.length) {
+        const i = next++;
+        for (let attempt = 1; ; attempt++) {
+          stop();
+          try {
+            await track(putObject(puts[i].url, puts[i].headers, puts[i].body, (n) => { loaded[i] = n; report(); }));
+            loaded[i] = puts[i].body.size;
+            report();
+            break;
+          } catch (e) {
+            loaded[i] = 0;
+            report();
+            const retryable = e instanceof ApiError && e.code !== 'ABORTED' && (e.status === 0 || e.status >= 500);
+            if (aborted || !retryable || attempt >= PUT_ATTEMPTS) throw e;
+            await new Promise((r) => setTimeout(r, 1000 * attempt));
+          }
+        }
+      }
+    };
+    try {
+      await Promise.all(Array.from({ length: Math.min(PUT_CONCURRENCY, puts.length) }, worker));
+    } catch (e) {
+      aborted = true; // 하나가 끝내 실패하면 나머지 PUT도 멈춘다
+      active.forEach((h) => h.abort());
+      throw e;
     }
     stop();
     onProgress(total, total);
-    return run(createJob({ ...spec, upload: { id: ticket.id } }, [], [], null, () => {}));
+    return track(createJob({ ...spec, upload: { id: ticket.id } }, [], [], null, () => {}));
   })();
-  return { done, abort: () => { aborted = true; current?.abort(); } };
+  return { done, abort: () => { aborted = true; active.forEach((h) => h.abort()); } };
 }
 
-// S3 presigned PUT 하나. 진행률 때문에 XMLHttpRequest. 서명된 헤더(x-amz-checksum-sha256)를 그대로 보낸다.
-function putObject(url: string, headers: Record<string, string>, file: Blob, onProgress: (loaded: number) => void): { done: Promise<void>; abort: () => void } {
+// S3 presigned PUT 하나(파일 또는 조각). 진행률 때문에 XMLHttpRequest. 서명된 헤더(x-amz-checksum-sha256)를 그대로 보낸다.
+function putObject(url: string, headers: Record<string, string>, body: Blob, onProgress: (loaded: number) => void): { done: Promise<void>; abort: () => void } {
   const xhr = new XMLHttpRequest();
   const done = new Promise<void>((resolve, reject) => {
     xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded); };
@@ -219,6 +260,6 @@ function putObject(url: string, headers: Record<string, string>, file: Blob, onP
   });
   xhr.open('PUT', url);
   for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
-  xhr.send(file);
+  xhr.send(body);
   return { done, abort: () => xhr.abort() };
 }

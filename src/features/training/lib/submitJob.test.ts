@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { submitJob, type UploadFile } from '../api';
+import { PART_BYTES, submitJob, type UploadFile } from '../api';
 
 // 가짜 XMLHttpRequest: S3 PUT과 마지막 POST /api/jobs(spec만)를 기록하고 바로 성공시킨다.
 interface Sent { method: string; url: string; headers: Record<string, string>; body: unknown }
 const sent: Sent[] = [];
+const failOnce = new Set<string>(); // 이 URL의 첫 PUT은 연결 실패
 class FakeXHR {
   upload: { onprogress: ((e: { lengthComputable: boolean; loaded: number; total: number }) => void) | null } = { onprogress: null };
   onload: (() => void) | null = null;
@@ -18,6 +19,7 @@ class FakeXHR {
     this.req.body = body;
     sent.push(this.req);
     const size = body instanceof Blob ? body.size : 1;
+    if (this.req.method === 'PUT' && failOnce.delete(this.req.url)) { queueMicrotask(() => this.onerror?.()); return; }
     queueMicrotask(() => {
       this.upload.onprogress?.({ lengthComputable: true, loaded: size, total: size });
       this.status = this.req.method === 'PUT' ? 200 : 201;
@@ -32,7 +34,7 @@ const file = (path: string, text: string): UploadFile => ({ path, file: new Blob
 // echo -n 'abc' | sha256sum
 const SHA_ABC = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad';
 
-afterEach(() => { sent.length = 0; vi.unstubAllGlobals(); });
+afterEach(() => { sent.length = 0; failOnce.clear(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe('submitJob (S3 직접 업로드, GPU-278)', () => {
   it('hashes each file, PUTs it to its presigned URL with the signed header, then submits only the spec', async () => {
@@ -89,5 +91,36 @@ describe('submitJob (S3 직접 업로드, GPU-278)', () => {
     await submitJob({ strategy: 'fsdp', gpus: 2, hyperparameters: {}, dataset: { id: 'qwen25-14b-wikitext103', version: 1 } }, [], [], null, () => {}).done;
     expect(fetchMock).not.toHaveBeenCalled();
     expect([...(sent[0].body as FormData).keys()]).toEqual(['spec']);
+  });
+
+  it('uploads a file bigger than one part as S3 multipart parts in parallel and retries a failed part', async () => {
+    vi.stubGlobal('XMLHttpRequest', FakeXHR);
+    const big = new Uint8Array(PART_BYTES + 10);
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const req = JSON.parse(init.body as string) as { partBytes: number; files: { path: string; size: number; parts?: string[] }[] };
+      return new Response(JSON.stringify({
+        id: 'a1b2c3d4', expiresAt: '2026-11-25T08:00:00Z',
+        files: req.files.map((f) => f.parts
+          ? { path: f.path, parts: f.parts.map((sum, i) => ({ number: i + 1, size: Math.min(req.partBytes, f.size - i * req.partBytes), url: `https://s3.example/${f.path}?part=${i + 1}`, headers: { 'x-amz-checksum-sha256': sum } })) }
+          : { path: f.path, url: `https://s3.example/${f.path}`, headers: {} }),
+      }), { status: 201 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    failOnce.add('https://s3.example/model/m/model.safetensors?part=2');
+    vi.useFakeTimers({ toFake: ['setTimeout'] });
+    const up = submitJob({ strategy: 'fsdp', gpus: 2, hyperparameters: {} },
+      [file('m/config.json', '{}'), { path: 'm/model.safetensors', file: new Blob([big]) }], [file('a.jsonl', '{}\n')], file('train.py', 'x'), () => {});
+    await vi.waitFor(() => expect(sent.filter((r) => r.url.endsWith('part=2'))).toHaveLength(1));
+    await vi.advanceTimersByTimeAsync(1000); // 다시 시도 대기
+    await up.done;
+
+    const req = JSON.parse(fetchMock.mock.calls[0][1].body as string) as { partBytes: number; files: { path: string; parts?: string[] }[] };
+    expect(req.partBytes).toBe(PART_BYTES);
+    expect(req.files.find((f) => f.path === 'model/m/model.safetensors')?.parts).toHaveLength(2);
+    expect(req.files.find((f) => f.path === 'model/m/config.json')?.parts).toBeUndefined();
+    const partPuts = sent.filter((r) => r.method === 'PUT' && r.url.includes('?part='));
+    expect(partPuts.map((r) => [r.url.split('=')[1], (r.body as Blob).size])).toEqual([['1', PART_BYTES], ['2', 10], ['2', 10]]); // 2번 조각은 다시 보냄
+    const spec = JSON.parse(await ((sent.find((r) => r.method === 'POST')?.body as FormData).get('spec') as Blob).text()) as { upload?: { id: string } };
+    expect(spec.upload).toEqual({ id: 'a1b2c3d4' });
   });
 });
