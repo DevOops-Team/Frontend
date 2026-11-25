@@ -29,7 +29,12 @@ export interface TrainingOptions {
   limits: { maxModelBytes: number; maxDataBytes: number; maxTrainBytes: number; maxFiles: number };
   // 저장 간격 계산 입력 (GPU-261): C = 저장 파라미터 수 · bytesPerParam ÷ 쓰는 Pod 수 ÷ writeBytesPerSecond
   checkpoint: { bytesPerParam: number; writeBytesPerSecond: number; mtbfSeconds: number; minIntervalSeconds: number };
+  // 학습 이름 → S3 고정 데이터셋 (GPU-160). 이 이름을 적으면 모델 · 데이터 · 학습 코드를 올리지 않고 spec.dataset으로 제출한다.
+  // 옛 백엔드는 이 칸이 없다
+  namedDatasets?: NamedDataset[];
 }
+
+export interface NamedDataset { name: string; id: string; version: number }
 
 export interface LoraConfig {
   r: number;
@@ -131,6 +136,8 @@ export interface SubmitSpec {
   finetune?: string; // full · qlora (GPU-262). 없으면 백엔드 기본값
   gpus: number;
   hyperparameters: Record<string, number | null>;
+  // S3 고정 데이터셋 datasets/<id>/v<version>/ (GPU-200 · GPU-160). 있으면 파일 파트를 보내지 않는다
+  dataset?: { id: string; version: number };
 }
 
 export interface CreatedJob {

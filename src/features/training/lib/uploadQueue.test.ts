@@ -46,6 +46,19 @@ describe('createUploadQueue', () => {
     expect(q.hasActive()).toBe(true);
   });
 
+  it('submits a fixed S3 dataset with no files (GPU-160)', () => {
+    const { send } = fakeSend();
+    const q = createUploadQueue(send, () => 1000);
+    const dataset = { id: 'qwen25-14b-wikitext103', version: 1 };
+    q.start({ name: 'devoops', spec: { name: 'devoops', strategy: 'fsdp', finetune: 'qlora', gpus: 2, hyperparameters: {}, dataset },
+      model: { folder: dataset.id, files: [] }, data: [], train: null });
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ dataset }), [], [], null, expect.any(Function));
+    const [u] = q.list();
+    expect(u.total).toBe(0);
+    expect(u.summary.dataset).toEqual(dataset);
+    expect(u.summary.train).toEqual({ name: '', bytes: 0 });
+  });
+
   it('tracks progress and switches to submitting when every byte is sent', () => {
     const { send, calls } = fakeSend();
     const q = createUploadQueue(send);

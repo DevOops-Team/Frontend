@@ -101,12 +101,13 @@ export interface Upload {
 // train.py는 학습 환경 이미지에 없고, 올린 파일이 학습 Pod의 /data/code/train.py로 들어간다.
 // 경로는 파트 이름에 넣는다: 서버가 파일명은 기본 이름만 쓰기 때문이다.
 // 진행률을 보여 주려고 fetch 대신 XMLHttpRequest를 쓴다 (fetch는 업로드 진행 이벤트가 없다).
-export function createJob(spec: SubmitSpec, model: UploadFile[], data: UploadFile[], train: UploadFile, onProgress: (sent: number, total: number) => void): Upload {
+// spec.dataset(S3 고정 데이터셋)으로 낼 때는 파일 없이 spec만 보낸다 (model · data 빈 배열, train null).
+export function createJob(spec: SubmitSpec, model: UploadFile[], data: UploadFile[], train: UploadFile | null, onProgress: (sent: number, total: number) => void): Upload {
   const form = new FormData();
   form.append('spec', new Blob([JSON.stringify(spec)], { type: 'application/json' }), 'spec.json');
   for (const f of model) form.append(`model/${f.path}`, f.file, f.path.split('/').pop());
   for (const f of data) form.append(`data/${f.path}`, f.file, f.path);
-  form.append(`train/${train.path}`, train.file, train.path);
+  if (train) form.append(`train/${train.path}`, train.file, train.path);
 
   const xhr = new XMLHttpRequest();
   const done = new Promise<CreatedJob>((resolve, reject) => {
