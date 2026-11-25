@@ -146,7 +146,8 @@ export interface SubmitSpec {
 export interface UploadTicket {
   id: string;
   expiresAt: string;
-  files: { path: string; url: string; headers: Record<string, string> }[];
+  // 작은 파일은 url · headers(PUT 하나), 큰 파일은 parts(S3 multipart 조각마다 PUT)
+  files: { path: string; url?: string; headers?: Record<string, string>; parts?: { number: number; size: number; url: string; headers: Record<string, string> }[] }[];
 }
 
 export interface CreatedJob {
