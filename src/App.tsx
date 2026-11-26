@@ -81,7 +81,7 @@ function Overview({ jobs, pending, listError, open, reload }: { jobs: Job[]; pen
     setDeleting(false);
     setConfirming(false);
     setSelectedKeys((prev) => new Set([...prev].filter((k) => !result.deleted.includes(k))));
-    // 삭제 결과는 왼쪽 아래 토스트로 (GPU-302). 성공은 저절로 사라지고, 실패는 직접 닫는다.
+    // 삭제 결과는 오른쪽 아래 토스트로 (GPU-302). 성공은 저절로 사라지고, 실패는 직접 닫는다.
     if (result.failed.length === 0) toast({ body: `학습 ${result.deleted.length}개를 삭제했습니다. 최종 모델과 체크포인트, 올린 파일을 S3에서 모두 지웠습니다.` });
     else toast({
       type: 'error',
@@ -190,8 +190,8 @@ export function App() {
   </SideNav>;
 
   return <Theme theme={neutralTheme} mode={theme}>
-    {/* 학습 생성 · 삭제 · S3 업로드 알림은 왼쪽 아래 토스트로 (GPU-302) */}
-    <ToastViewport position="bottomStart">
+    {/* 학습 생성 · 삭제 · S3 업로드 알림은 오른쪽 아래 토스트로 (GPU-302) */}
+    <ToastViewport position="bottomEnd">
     <UploadToasts onOpenJob={setView} />
     <AppShell height="fill" sideNav={sideNav}>
       {view === 'create' ? <CreatePipeline onSubmitted={(key) => setView(uploadView(key))} onCancel={goHome} />

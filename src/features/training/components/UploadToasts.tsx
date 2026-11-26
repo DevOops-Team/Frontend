@@ -4,7 +4,7 @@ import { useToast } from '@astryxdesign/core/Toast';
 import type { UploadState } from '../lib/uploadQueue';
 import { useUploads } from '../uploads';
 
-// S3 업로드 알림 (GPU-302). 어느 화면에 있든 업로드가 시작 · 완료(학습 생성) · 실패하면 왼쪽 아래 토스트로 알린다.
+// S3 업로드 알림 (GPU-302). 어느 화면에 있든 업로드가 시작 · 완료(학습 생성) · 실패하면 오른쪽 아래 토스트로 알린다.
 // 처음 그릴 때 이미 있던 업로드는 상태만 기억하고 알리지 않는다. 취소는 사용자가 직접 한 일이라 알리지 않는다.
 export function UploadToasts({ onOpenJob }: { onOpenJob: (jobId: string) => void }) {
   const toast = useToast();
