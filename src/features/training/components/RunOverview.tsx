@@ -15,7 +15,7 @@ import { Step, Stepper } from '@astryxdesign/core/Stepper';
 import { Heading, Text } from '@astryxdesign/core/Text';
 import { Icon } from '@/shared/ui/Icon';
 import { StateBadge } from '@/shared/ui/StateBadge';
-import { JOB_DETAIL_POLL_MS, errorMessage, getJob, isTerminal, jobEvents, jobFile, jobFiles } from '../api';
+import { JOB_DETAIL_POLL_MS, detailPollDelay, errorMessage, getJob, isTerminal, jobEvents, jobFile, jobFiles } from '../api';
 import { formatClock, formatDateTime } from '../lib/format';
 import { formatDuration } from '../lib/upload';
 import { STATUS_LABEL, runProgress, stepsPerEpoch, uiState } from '../lib/progress';
@@ -147,7 +147,8 @@ export function RunOverview({ job, events, files, onBack, onChanged }: { job: Jo
   </>;
 }
 
-// 작업 하나를 3초마다 다시 읽는다. 끝난 작업은 더 읽지 않는다 (서비스 API 명세 §1).
+// 작업 하나를 3초마다 다시 읽는다. 완료 · 중지된 작업은 더 읽지 않고, 실패한 작업은 복구로 다시
+// 실행될 수 있어 10초마다 읽는다 (서비스 API 명세 §1, GPU-300).
 export function RunPage({ id, onBack }: { id: string; onBack: () => void }) {
   const [job, setJob] = useState<Job | null>(null);
   const [events, setEvents] = useState<JobEvent[]>([]);
@@ -159,7 +160,7 @@ export function RunPage({ id, onBack }: { id: string; onBack: () => void }) {
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     async function poll() {
-      let finished = false;
+      let delay: number | null = JOB_DETAIL_POLL_MS;
       try {
         const [j, ev, fs] = await Promise.all([getJob(id), jobEvents(id), jobFiles(id)]);
         if (!live) return;
@@ -167,12 +168,12 @@ export function RunPage({ id, onBack }: { id: string; onBack: () => void }) {
         setEvents(ev);
         setFiles(fs);
         setError('');
-        finished = isTerminal(j.status);
+        delay = detailPollDelay(j.status);
       } catch (e) {
         if (!live) return;
         setError(errorMessage(e));
       }
-      if (!finished) timer = setTimeout(() => { void poll(); }, JOB_DETAIL_POLL_MS);
+      if (delay !== null) timer = setTimeout(() => { void poll(); }, delay);
     }
     void poll();
     return () => { live = false; clearTimeout(timer); };
