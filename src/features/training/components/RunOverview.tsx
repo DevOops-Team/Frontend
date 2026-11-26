@@ -135,7 +135,9 @@ export function RunOverview({ job, events, files, onBack, onChanged }: { job: Jo
             {cfg ? <MetadataListItem label="epochs">{cfg.epochs}</MetadataListItem> : null}
             {cfg ? <MetadataListItem label="total_steps">{p && p.totalSteps > 0 ? p.totalSteps : '-'}</MetadataListItem> : null}
             {cfg ? <MetadataListItem label="learning_rate">{cfg.learning_rate}</MetadataListItem> : null}
-            {cfg ? <MetadataListItem label="체크포인트 간격"><span title={`τ = √(2 · ${cfg.checkpoint_policy.estimated_save_seconds}s · ${cfg.checkpoint_policy.mtbf_seconds}s)`}>{formatDuration(cfg.checkpoint_policy.interval_seconds)}마다</span></MetadataListItem> : null}
+            {cfg ? <MetadataListItem label="체크포인트 간격">{(cfg.checkpoint_policy.every_steps ?? 0) > 0
+              ? <span title="고정 step 간격 (GPU-298)">{cfg.checkpoint_policy.every_steps} step마다</span>
+              : <span title={`τ = √(2 · ${cfg.checkpoint_policy.estimated_save_seconds}s · ${cfg.checkpoint_policy.mtbf_seconds}s)`}>{formatDuration(cfg.checkpoint_policy.interval_seconds)}마다</span>}</MetadataListItem> : null}
             {cfg ? <MetadataListItem label="체크포인트 형식"><Text type="code">{cfg.checkpoint_format}</Text></MetadataListItem> : null}
             <MetadataListItem label="JobSet"><Text type="code"><span title={job.jobsetName}>{job.jobsetName}</span></Text></MetadataListItem>
           </MetadataList>
