@@ -6,6 +6,8 @@ import { hashFile, type FileHash } from './lib/sha256';
 
 export const JOB_LIST_POLL_MS = 5000; // 서비스 API 명세 §1: 목록 5초, 상세 3초
 export const JOB_DETAIL_POLL_MS = 3000;
+// FAILED는 끝이 아닐 수 있다: 복구 컨트롤러가 다음 세대를 내면 QUEUED → RUNNING으로 바뀐다 (GPU-300).
+export const JOB_FAILED_POLL_MS = 10000;
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number, readonly code?: string) {
@@ -145,6 +147,13 @@ export function buildSpec(f: JobForm, hyperparameters: Record<string, number | n
 // 화면이 더 읽지 않아도 되는 상태. STOPPING은 곧 CANCELLED가 되므로 계속 읽는다.
 export function isTerminal(s: JobStatus): boolean {
   return s === 'SUCCEEDED' || s === 'FAILED' || s === 'CANCELLED';
+}
+
+// 상세 화면이 다음에 다시 읽을 때까지의 시간. null이면 더 읽지 않는다.
+// FAILED는 복구로 다음 세대가 올 수 있어 간격만 늘려 계속 읽는다 (GPU-300).
+export function detailPollDelay(s: JobStatus): number | null {
+  if (s === 'SUCCEEDED' || s === 'CANCELLED') return null;
+  return s === 'FAILED' ? JOB_FAILED_POLL_MS : JOB_DETAIL_POLL_MS;
 }
 
 export function errorMessage(e: unknown): string {
