@@ -3,6 +3,7 @@
 export { CreatePipeline } from './components/CreatePipeline';
 export { RunPage } from './components/RunOverview';
 export { UploadPage } from './components/UploadPage';
+export { UploadToasts } from './components/UploadToasts';
 export { uploads, useUploads } from './uploads';
 export { UPLOAD_LABEL, isActive as isUploadActive, uploadStats, uploadUiState, type PendingUpload } from './lib/uploadQueue';
 export { JOB_LIST_POLL_MS, deleteJob, errorMessage, listJobs, restartJob, stopJob } from './api';

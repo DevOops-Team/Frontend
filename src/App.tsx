@@ -12,10 +12,11 @@ import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/Segme
 import { SideNav, SideNavItem, SideNavSection } from '@astryxdesign/core/SideNav';
 import { Table, TableSelectionToolbar, pixel, proportional, useTableSelection, useTableSelectionState } from '@astryxdesign/core/Table';
 import { Heading, Text } from '@astryxdesign/core/Text';
+import { ToastViewport, useToast } from '@astryxdesign/core/Toast';
 import { Theme } from '@astryxdesign/core/theme';
 import { neutralTheme } from '@astryxdesign/theme-neutral/built';
 import { useTheme } from '@/features/theme';
-import { CreatePipeline, JOB_LIST_POLL_MS, RestartJobButton, RunPage, STATUS_LABEL, StopJobButton, UPLOAD_LABEL, UploadPage, deleteJob, deleteJobs, errorMessage, isDeletable, isUploadActive, listJobs, runProgress, uiState, uploadStats, uploadUiState, useUploads, type Job, type PendingUpload } from '@/features/training';
+import { CreatePipeline, JOB_LIST_POLL_MS, RestartJobButton, RunPage, STATUS_LABEL, StopJobButton, UPLOAD_LABEL, UploadPage, UploadToasts, deleteJob, deleteJobs, errorMessage, isDeletable, isUploadActive, listJobs, runProgress, uiState, uploadStats, uploadUiState, useUploads, type Job, type PendingUpload } from '@/features/training';
 import { formatBytes } from '@/features/training/lib/format';
 import { Icon } from '@/shared/ui/Icon';
 import { ChipIcon, DocIcon, GridIcon } from '@/shared/ui/navIcons';
@@ -63,7 +64,7 @@ function Overview({ jobs, pending, listError, open, reload }: { jobs: Job[]; pen
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [deleteNotice, setDeleteNotice] = useState<{ deleted: number; failed: { name: string; message: string }[] } | null>(null);
+  const toast = useToast();
   const selectable = (r: Row) => r.kind === 'job';
   const enabled = (r: Row) => r.kind === 'job' && isDeletable(r.job.status);
   const { selectionConfig, selectionState } = useTableSelectionState<Row>({
@@ -80,7 +81,12 @@ function Overview({ jobs, pending, listError, open, reload }: { jobs: Job[]; pen
     setDeleting(false);
     setConfirming(false);
     setSelectedKeys((prev) => new Set([...prev].filter((k) => !result.deleted.includes(k))));
-    setDeleteNotice({ deleted: result.deleted.length, failed: result.failed.map((f) => ({ name: nameOf(f.id), message: f.message })) });
+    // 삭제 결과는 왼쪽 아래 토스트로 (GPU-302). 성공은 저절로 사라지고, 실패는 직접 닫는다.
+    if (result.failed.length === 0) toast({ body: `학습 ${result.deleted.length}개를 삭제했습니다. 최종 모델과 체크포인트, 올린 파일을 S3에서 모두 지웠습니다.` });
+    else toast({
+      type: 'error',
+      body: `${result.failed.length}개를 삭제하지 못했습니다${result.deleted.length > 0 ? ` (${result.deleted.length}개는 삭제함)` : ''}: ${result.failed.map((f) => `${nameOf(f.id)}: ${f.message}`).join(' · ')}`,
+    });
     reload();
   }
   const columns = useMemo(() => [
@@ -113,10 +119,6 @@ function Overview({ jobs, pending, listError, open, reload }: { jobs: Job[]; pen
     content={<LayoutContent>
       <VStack gap={6}>
         {listError && <Banner status="error" role="alert" title="학습 목록을 불러오지 못했습니다" description={listError} />}
-        {deleteNotice && deleteNotice.failed.length === 0 && <Banner status="success" title={`학습 ${deleteNotice.deleted}개를 삭제했습니다`} description="최종 모델과 체크포인트, 올린 파일을 S3에서 모두 지웠습니다." onDismiss={() => setDeleteNotice(null)} />}
-        {deleteNotice && deleteNotice.failed.length > 0 && <Banner status="error" role="alert"
-          title={`${deleteNotice.failed.length}개를 삭제하지 못했습니다${deleteNotice.deleted > 0 ? ` (${deleteNotice.deleted}개는 삭제함)` : ''}`}
-          description={deleteNotice.failed.map((f) => `${f.name}: ${f.message}`).join(' · ')} onDismiss={() => setDeleteNotice(null)} />}
         <Grid columns={{ minWidth: 200 }} gap={4}>
           <Card padding={4}><VStack gap={2}><Text type="supporting">전체 학습</Text><Text type="display-2" hasTabularNumbers>{rows.length}</Text></VStack></Card>
           <Card padding={4}><VStack gap={2}><Text type="supporting">완료한 학습</Text><Text type="display-2" hasTabularNumbers>{count('SUCCEEDED')}</Text></VStack></Card>
@@ -188,11 +190,15 @@ export function App() {
   </SideNav>;
 
   return <Theme theme={neutralTheme} mode={theme}>
+    {/* 학습 생성 · 삭제 · S3 업로드 알림은 왼쪽 아래 토스트로 (GPU-302) */}
+    <ToastViewport position="bottomStart">
+    <UploadToasts onOpenJob={setView} />
     <AppShell height="fill" sideNav={sideNav}>
       {view === 'create' ? <CreatePipeline onSubmitted={(key) => setView(uploadView(key))} onCancel={goHome} />
         : view.startsWith(UPLOAD_VIEW) ? <UploadPage key={view} uploadKey={view.slice(UPLOAD_VIEW.length)} onBack={goHome} onCreated={setView} />
           : view !== 'home' ? <RunPage key={view} id={view} onBack={goHome} />
             : <Overview jobs={jobs} pending={pending} listError={listError} open={setView} reload={reload} />}
     </AppShell>
+    </ToastViewport>
   </Theme>;
 }

@@ -45,7 +45,7 @@ describe('job list deletion', () => {
     expect(within(dialog).getByText(/done-one, broken/)).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole('button', { name: '영구 삭제' }));
 
-    expect(await screen.findByText('학습 2개를 삭제했습니다')).toBeInTheDocument();
+    expect((await screen.findAllByText(/^학습 2개를 삭제했습니다/))[0]).toBeInTheDocument(); // 토스트 + 스크린 리더 안내 (GPU-302)
     expect(deleted.sort()).toEqual(['aa', 'bb']);
     await waitFor(() => expect(screen.queryByText('done-one')).not.toBeInTheDocument());
     expect(screen.getByText('busy')).toBeInTheDocument();
@@ -58,8 +58,7 @@ describe('job list deletion', () => {
     await userEvent.click(screen.getByRole('checkbox', { name: 'Select broken 선택' }));
     await userEvent.click(screen.getByRole('button', { name: '선택 삭제' }));
     await userEvent.click(screen.getByRole('button', { name: '영구 삭제' }));
-    expect(await screen.findByText('1개를 삭제하지 못했습니다')).toBeInTheDocument();
-    expect(screen.getByText(/broken: delete s3:\/\/jobs\/x\/ failed: AccessDenied/)).toBeInTheDocument();
+    expect((await screen.findAllByText(/^1개를 삭제하지 못했습니다: broken: delete s3:\/\/jobs\/x\/ failed: AccessDenied/))[0]).toBeInTheDocument(); // 토스트 (GPU-302)
     expect(screen.getByText('1개 선택됨')).toBeInTheDocument();
   });
 });
