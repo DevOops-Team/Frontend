@@ -2,3 +2,10 @@ node_modules
 dist
 .git
 *.md
+.github
+Dockerfile
+.dockerignore
+eslint.config.js
+**/*.test.ts
+**/*.test.tsx
+src/test-setup.ts

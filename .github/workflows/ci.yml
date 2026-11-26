@@ -1,6 +1,7 @@
 # 협업 규칙 §7 CI 파이프라인.
 #   PR(→ develop, → main)              : eslint · tsc · vitest · build + 이미지 빌드 (push 안 함). 검사와 이미지 빌드는 병렬 (GPU-282)
-#   main push(머지)             : 릴리스 버전 계산 → 이미지 push  ghcr.io/devoops-team/frontend:{X.Y.Z, X.Y, main, sha-<7자리>}
+#   main push(머지)             : 릴리스 버전 계산 → 이미지 push  ghcr.io/devoops-team/frontend:{X.Y.Z, sha-<7자리>}
+#                                 (배포는 X.Y.Z@digest만 쓴다 — main · X.Y · latest 태그는 만들지 않는다, GPU-293)
 #                                 → 버전 봇이 태그 vX.Y.Z · Release 생성 → 배포 봇이 Gitops overlay에 X.Y.Z@digest 반영
 #                                 lint · test는 다시 돌리지 않는다: develop → main PR에서 같은 트리를 이미 검사했다 (GPU-282)
 #   버전 · description은 develop → main PR 본문의 '## 릴리스 노트'에서 나온다 (GPU-136, 형식은 .github/pull_request_template.md).
@@ -25,8 +26,10 @@ env:
 
 jobs:
   # 버전 계산 (main push에서만 release=true). 로직은 Gitops 재사용 워크플로.
+  # PR에서는 결과를 쓰지 않으므로 돌리지 않는다 (GPU-293)
   plan:
     name: version
+    if: github.event_name == 'push'
     uses: DevOops-Team/Gitops/.github/workflows/release-plan.yml@main
     permissions:
       contents: read
@@ -36,9 +39,10 @@ jobs:
     name: lint · typecheck · test · build
     if: github.event_name != 'push'      # main push는 develop → main PR에서 검사한 트리 (GPU-282)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -55,7 +59,10 @@ jobs:
   image:
     name: image
     needs: [plan]                        # 검사를 기다리지 않는다: PR에서는 병렬, main push에서는 검사 없음 (GPU-282)
+    # PR에서는 plan이 skipped — 그래도 돈다. push에서 plan이 실패하면 돌지 않는다 (GPU-293)
+    if: ${{ !cancelled() && needs.plan.result != 'failure' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       image: ${{ env.IMAGE }}
       digest: ${{ steps.build.outputs.digest }}
@@ -65,30 +72,29 @@ jobs:
     env:
       PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.plan.outputs.release == 'true' }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to GHCR
         if: env.PUSH == 'true'
-        uses: docker/login-action@v4
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.IMAGE }}
+          flavor: latest=false
           tags: |
             type=semver,pattern={{version}},value=${{ needs.plan.outputs.version }},enable=${{ env.PUSH }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ needs.plan.outputs.version }},enable=${{ env.PUSH }}
-            type=raw,value=main
             type=sha,prefix=sha-,format=short
           labels: |
             ${{ env.PUSH == 'true' && format('org.opencontainers.image.description={0}', needs.plan.outputs.description) || '' }}
           annotations: |
             ${{ env.PUSH == 'true' && format('org.opencontainers.image.description={0}', needs.plan.outputs.description) || '' }}
       - id: build
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           platforms: linux/amd64
