@@ -33,7 +33,7 @@ describe('UploadToasts (GPU-302)', () => {
   it('toasts when an upload starts, finishes and fails, but not for uploads that were already there', async () => {
     store.set([upload('old', 'done', { jobId: 'j0' })]);
     const onOpenJob = vi.fn();
-    render(<ToastViewport position="bottomStart"><UploadToasts onOpenJob={onOpenJob} /></ToastViewport>);
+    render(<ToastViewport position="bottomEnd"><UploadToasts onOpenJob={onOpenJob} /></ToastViewport>);
     expect(screen.queryByText(/run-old/)).not.toBeInTheDocument();
 
     act(() => store.set([upload('old', 'done', { jobId: 'j0' }), upload('a', 'uploading'), upload('b', 'uploading')]));
