@@ -28,7 +28,8 @@ export interface TrainingOptions {
   hyperparameters: HyperparameterDef[];
   limits: { maxModelBytes: number; maxDataBytes: number; maxTrainBytes: number; maxFiles: number };
   // 저장 간격 계산 입력 (GPU-261): C = 저장 파라미터 수 · bytesPerParam ÷ 쓰는 Pod 수 ÷ writeBytesPerSecond
-  checkpoint: { bytesPerParam: number; writeBytesPerSecond: number; mtbfSeconds: number; minIntervalSeconds: number };
+  // everySteps > 0이면 τ 대신 그 step마다 저장 (GPU-298, 옛 백엔드는 이 칸이 없다)
+  checkpoint: { everySteps?: number; bytesPerParam: number; writeBytesPerSecond: number; mtbfSeconds: number; minIntervalSeconds: number };
   // 학습 이름 → S3 고정 데이터셋 (GPU-160). 이 이름을 적으면 모델 · 데이터 · 학습 코드를 올리지 않고 spec.dataset으로 제출한다.
   // 옛 백엔드는 이 칸이 없다
   namedDatasets?: NamedDataset[];
@@ -50,6 +51,7 @@ export interface FinetuneOption {
 }
 
 export interface CheckpointPolicy {
+  every_steps?: number; // schema 4 (GPU-298): 0보다 크면 고정 step 간격, 0이면 interval_seconds
   interval_seconds: number;
   estimated_save_seconds: number;
   mtbf_seconds: number;
