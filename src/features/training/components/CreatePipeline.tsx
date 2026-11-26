@@ -106,6 +106,7 @@ export function CreatePipeline({ onSubmitted, onCancel }: { onSubmitted: (upload
   // 저장 간격 미리보기 (GPU-261, 백엔드와 같은 계산). 텐서 모양을 못 읽으면 Full은 폴더 크기 ÷ 2(16bit)로, QLoRA는 보여 주지 않는다
   const params = named ? 0 : shapes ? savedParams(shapes, finetuneInfo?.lora ?? null) : shapes === null && finetune === 'full' && model ? model.pick.bytes / 2 : 0;
   const ckpt = params > 0 && options?.checkpoint.bytesPerParam ? checkpointInterval(params, checkpointWriters(strategy, gpus), options.checkpoint) : null;
+  const everySteps = options?.checkpoint.everySteps ?? 0; // 고정 step 간격 (GPU-298)
   const qloraProblem = named ? '' : finetune === 'qlora' && shapes === null ? 'QLoRA는 safetensors 모델 폴더만 쓸 수 있습니다 (텐서 모양으로 어댑터 크기를 계산합니다).'
     : finetune === 'qlora' && shapes && params === 0 ? `QLoRA 대상 층(${finetuneInfo?.lora?.target_modules.join(', ')})이 모델에 없습니다.` : '';
   const changed = Object.entries(parsed.values);
@@ -267,7 +268,7 @@ export function CreatePipeline({ onSubmitted, onCancel }: { onSubmitted: (upload
           </Card>;
         })}
       </Grid>
-      {ckpt ? <Text type="supporting">체크포인트 약 {formatDuration(ckpt.intervalSeconds)}마다 (저장 파라미터 {(params / 1e6).toFixed(1)}M, 저장 약 {formatDuration(ckpt.saveSeconds)})</Text> : null}
+      {everySteps > 0 ? <Text type="supporting">체크포인트 {everySteps} step마다 (고정 간격)</Text> : ckpt ? <Text type="supporting">체크포인트 약 {formatDuration(ckpt.intervalSeconds)}마다 (저장 파라미터 {(params / 1e6).toFixed(1)}M, 저장 약 {formatDuration(ckpt.saveSeconds)})</Text> : null}
       <Selector label="총 GPU 개수 (노드당 1개)" value={String(gpus)} onChange={(v) => setGpus(Number(v))} width={320} options={gpuOptions.map(({ n, reason }) => ({ value: String(n), label: `${n}개${reason ? ` (${reason})` : ''}`, disabled: Boolean(reason) }))} />
       <Collapsible trigger={<Text weight="medium">상세 설정</Text>} isOpen={advancedOpen} onOpenChange={setAdvancedOpen}>
         <VStack gap={3} paddingBlockStart={2}>
@@ -285,7 +286,7 @@ export function CreatePipeline({ onSubmitted, onCancel }: { onSubmitted: (upload
         {!named && <MetadataListItem label="모델">{model?.pick.folder} ({formatBytes(model?.pick.bytes ?? 0)})</MetadataListItem>}
         {!named && <MetadataListItem label="데이터">파일 {data?.pick.files.length}개 ({formatBytes(data?.pick.bytes ?? 0)})</MetadataListItem>}
         {!named && <MetadataListItem label="학습 코드">{train?.upload?.path} ({formatBytes(train?.upload?.file.size ?? 0)})</MetadataListItem>}
-        {ckpt ? <MetadataListItem label="체크포인트 간격">약 {formatDuration(ckpt.intervalSeconds)}마다</MetadataListItem> : null}
+        {everySteps > 0 ? <MetadataListItem label="체크포인트 간격">{everySteps} step마다</MetadataListItem> : ckpt ? <MetadataListItem label="체크포인트 간격">약 {formatDuration(ckpt.intervalSeconds)}마다</MetadataListItem> : null}
         <MetadataListItem label="상세 설정">{changed.length === 0 ? '기본값' : changed.map(([k, v]) => `${k} ${v}`).join(', ')}</MetadataListItem>
       </MetadataList>
     </VStack>}
